@@ -296,31 +296,6 @@ option(AGC_BUILD_VISUAL_TEST "Enable the standalone AGC SPIR-V visual test" OFF)
 if(AGC_BUILD_VISUAL_TEST)
     ensure_agc_glslang()
 
-if(APPLE)
-    function(ensure_spirv_cross)
-        if(TARGET spirv-cross-core AND TARGET spirv-cross-msl)
-            return()
-        endif()
-        set(SPIRV_CROSS_ENABLE_GLSL OFF)
-        set(SPIRV_CROSS_ENABLE_HLSL OFF)
-        set(SPIRV_CROSS_ENABLE_CPP OFF)
-        set(SPIRV_CROSS_ENABLE_REFLECT OFF)
-        set(SPIRV_CROSS_ENABLE_UTIL ON)
-        set(SPIRV_CROSS_CLI OFF)
-        set(SPIRV_CROSS_ENABLE_TESTS OFF)
-        set(SPIRV_CROSS_SKIP_INSTALL ON)
-        set(SPIRV_CROSS_SHARED OFF)
-        set(SPIRV_CROSS_STATIC ON)
-        add_subdirectory(
-                "${CMAKE_SOURCE_DIR}/3rdparty/SPIRV-Cross"
-                "${CMAKE_BINARY_DIR}/3rdparty/SPIRV-Cross"
-                EXCLUDE_FROM_ALL
-        )
-    endfunction()
-
-    ensure_spirv_cross()
-endif()
-
     set(visualShaders)
 
     foreach(stage IN ITEMS vert frag)
