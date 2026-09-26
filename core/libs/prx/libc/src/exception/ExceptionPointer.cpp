@@ -3,6 +3,9 @@
 
 #if defined(__APPLE__)
 #include "prx/libc/include/exceptions/Runtime.hpp"
+namespace {
+extern "C" [[gnu::weak_import]] void __cxa_rethrow_primary_exception(void* exception);
+}
 #endif
 
 extern "C" {
@@ -41,7 +44,7 @@ std::exception_ptr APS5_VABI _ZSt17current_exceptionv_nid_postfix() noexcept {
 }
 
 [[noreturn]] void APS5_VABI _ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE_nid_postfix(std::exception_ptr exception) {
-    __cxxabiv1::__cxa_rethrow_primary_exception(*reinterpret_cast<void**>(&exception));
+    if (__cxa_rethrow_primary_exception) __cxa_rethrow_primary_exception(*reinterpret_cast<void**>(&exception));
     LibcException::Terminate();
 }
 #else
