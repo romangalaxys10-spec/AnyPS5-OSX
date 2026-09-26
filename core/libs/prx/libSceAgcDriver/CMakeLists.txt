@@ -119,7 +119,9 @@ if(APPLE)
     target_sources(libSceAgcDriver PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/Execution/src/MetalDevice.mm
     )
-    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Execution/src/MetalDevice.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Execution/src/MetalDevice.mm PROPERTIES
+            SKIP_PRECOMPILE_HEADERS ON
+            COMPILE_OPTIONS "-mmacosx-version-min=14.0")
 endif()
 
 target_include_directories(libSceAgcDriver PRIVATE
