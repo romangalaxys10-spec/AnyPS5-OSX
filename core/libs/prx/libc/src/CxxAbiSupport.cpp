@@ -19,6 +19,12 @@
 
 #include "prx/libc/include/General.hpp"
 
+#if defined(__APPLE__)
+namespace __cxxabiv1 {
+extern "C" int __cxa_thread_atexit(void (*func)(void*), void* obj, void* dso_symbol);
+}
+#endif
+
 extern "C" {
 
 void* APS5_VABI __cxa_demangle_nid_postfix(const char* mangled, char* buf, std::size_t* len, int* status) {

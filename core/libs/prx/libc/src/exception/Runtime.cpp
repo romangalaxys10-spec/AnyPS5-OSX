@@ -1,6 +1,9 @@
 #include "prx/libc/include/exceptions/Runtime.hpp"
 #include <cstdio>
 #include <limits>
+#if defined(__APPLE__)
+#include "prx/libc/include/specifics/ItaniumAbi.hpp"
+#endif
 
 namespace LibcException {
 
