@@ -145,7 +145,7 @@ fragment float4 AgcBlitFragment(BlitVertexOut in [[stage_in]],
 )";
 }
 
-id<MTLRenderPipelineState> GetBlitPipeline(State& state) {
+id<MTLRenderPipelineState> GetBlitPipeline(MetalDevice::State& state) {
     @autoreleasepool {
         if (state.blitPipeline != nil) return state.blitPipeline;
         require(state.device != nil, "device must exist before pipeline creation");
@@ -175,7 +175,7 @@ id<MTLRenderPipelineState> GetBlitPipeline(State& state) {
     }
 }
 
-id<MTLTexture> EnsurePixelTexture(State& state, std::uint32_t width, std::uint32_t height) {
+id<MTLTexture> EnsurePixelTexture(MetalDevice::State& state, std::uint32_t width, std::uint32_t height) {
     @autoreleasepool {
         if (state.pixelTexture != nil && state.pixelTextureWidth == width && state.pixelTextureHeight == height) {
             return state.pixelTexture;
@@ -192,7 +192,7 @@ id<MTLTexture> EnsurePixelTexture(State& state, std::uint32_t width, std::uint32
     }
 }
 
-id<MTLTexture> EnsureScalerSourceTexture(State& state, std::uint32_t width, std::uint32_t height, MTLPixelFormat format) {
+id<MTLTexture> EnsureScalerSourceTexture(MetalDevice::State& state, std::uint32_t width, std::uint32_t height, MTLPixelFormat format) {
     @autoreleasepool {
         for (auto& entry : state.scalers) {
             if (entry.sourceTexture != nil && entry.sourceWidth == width && entry.sourceHeight == height) {
@@ -204,7 +204,7 @@ id<MTLTexture> EnsureScalerSourceTexture(State& state, std::uint32_t width, std:
         descriptor.storageMode = MTLStorageModeShared;
         id<MTLTexture> texture = [state.device newTextureWithDescriptor:descriptor];
         require(texture != nil, "scaler source texture allocation failed");
-        ScalerEntry entry{};
+        MetalDevice::State::ScalerEntry entry{};
         entry.sourceWidth = width;
         entry.sourceHeight = height;
         entry.targetWidth = 0;
