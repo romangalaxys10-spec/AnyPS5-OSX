@@ -9,6 +9,11 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <unistd.h>
+#include <mach/mach.h>
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
 #else
 #include <link.h>
 #include <unistd.h>
@@ -88,6 +93,38 @@ void GuestAllocationsRegisterMainImage_nid_postfix(void*) {
     };
     std::map<std::uint64_t, Page> pages;
     const auto pageSize = static_cast<std::uint64_t>(::sysconf(_SC_PAGESIZE));
+#if defined(__APPLE__)
+    const auto imageCount = _dyld_image_count();
+    for (std::uint32_t imageIndex = 0; imageIndex < imageCount; ++imageIndex) {
+        const auto* header = static_cast<const struct mach_header_64*>(_dyld_get_image_header(imageIndex));
+        if (header == nullptr) continue;
+        const auto base = reinterpret_cast<std::uintptr_t>(header);
+        std::uintptr_t cursor = base + sizeof(struct mach_header_64);
+        for (std::uint32_t commandIndex = 0; commandIndex < header->ncmds; ++commandIndex) {
+            const auto* command = reinterpret_cast<const struct load_command*>(cursor);
+            if (command->cmd == LC_SEGMENT_64) {
+                const auto* segment = reinterpret_cast<const struct segment_command_64*>(cursor);
+                if (segment->vmsize == 0) {
+                    cursor += command->cmdsize;
+                    continue;
+                }
+                const auto readable = (segment->initprot & VM_PROT_READ) != 0;
+                const auto writable = (segment->initprot & VM_PROT_WRITE) != 0;
+                const auto start = (base + segment->vmaddr) & ~(pageSize - 1);
+                const auto end = (base + segment->vmaddr + segment->vmsize + pageSize - 1) & ~(pageSize - 1);
+                for (auto page = start; page < end; page += pageSize) {
+                    auto& entry = pages[page];
+                    entry.readable = entry.readable || readable;
+                    entry.writable = entry.writable || writable;
+                }
+            }
+            cursor += command->cmdsize;
+        }
+    }
+    require(!pages.empty(), "main guest image has no loadable segments");
+    std::pair<std::map<std::uint64_t, Page>*, std::uint64_t> collection{nullptr, 0};
+    static_cast<void>(collection);
+#else
     std::pair<std::map<std::uint64_t, Page>*, std::uint64_t> collection{&pages, pageSize};
     dl_iterate_phdr([](dl_phdr_info* image, std::size_t, void* data) {
         auto& collected = *static_cast<std::pair<std::map<std::uint64_t, Page>*, std::uint64_t>*>(data);
@@ -105,6 +142,7 @@ void GuestAllocationsRegisterMainImage_nid_postfix(void*) {
         return 1;
     }, &collection);
     require(!pages.empty(), "main guest image has no loadable segments");
+#endif
     auto replacement = state.ranges;
     for (auto page = pages.begin(); page != pages.end();) {
         auto last = page;
