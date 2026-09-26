@@ -3,8 +3,11 @@
 #if defined(__APPLE__)
 
 #import <Metal/Metal.h>
+#import <MetalFX/MetalFX.h>
+#import <MetalFX/MTLFXSpatialScaler.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 
 #import <SDL.h>
 #import <SDL_syswm.h>
