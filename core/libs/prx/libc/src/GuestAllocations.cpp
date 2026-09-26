@@ -1,5 +1,6 @@
 #include "prx/libc/include/GuestAllocations.hpp"
 #include "prx/libc/include/GuestMemoryTracking.hpp"
+#include <algorithm>
 #include <limits>
 #include <iterator>
 #include <map>
@@ -96,7 +97,7 @@ void GuestAllocationsRegisterMainImage_nid_postfix(void*) {
 #if defined(__APPLE__)
     const auto imageCount = _dyld_image_count();
     for (std::uint32_t imageIndex = 0; imageIndex < imageCount; ++imageIndex) {
-        const auto* header = static_cast<const struct mach_header_64*>(_dyld_get_image_header(imageIndex));
+        const auto* header = reinterpret_cast<const struct mach_header_64*>(_dyld_get_image_header(imageIndex));
         if (header == nullptr) continue;
         const auto base = reinterpret_cast<std::uintptr_t>(header);
         std::uintptr_t cursor = base + sizeof(struct mach_header_64);
