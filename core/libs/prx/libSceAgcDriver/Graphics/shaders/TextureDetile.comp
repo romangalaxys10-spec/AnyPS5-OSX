@@ -1,0 +1,202 @@
+#version 450
+
+layout(constant_id = 0) const uint ELEMENT_BYTES = 4u;
+layout(constant_id = 1) const uint BLOCK_BYTES = 256u;
+layout(constant_id = 2) const uint TILE_FAMILY = 0u;
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer Input { uint data[]; } inputBuffer;
+layout(set = 0, binding = 1, std430) buffer Output { uint data[]; } outputBuffer;
+
+layout(push_constant) uniform Push {
+    uint srcBase;
+    uint dstBase;
+    uint width;
+    uint height;
+    uint pitchBytes;
+    uint blocksPerRow;
+    uint tail;
+    uint tailX;
+    uint tailY;
+    uint elementBytes;
+    uint arrayLayer;
+} params;
+
+uint standardOffset(uint x, uint y) {
+    switch (ELEMENT_BYTES) {
+        case 1u:
+            return ((y << 4) & 0x1f0u) ^ ((y << 5) & 0x400u) ^ (x & 0x00fu) ^
+                   ((x << 5) & 0x200u) ^ ((x << 6) & 0x800u);
+        case 2u:
+            return ((y << 4) & 0x070u) ^ ((y << 5) & 0x100u) ^ ((y << 6) & 0x400u) ^
+                   ((x << 1) & 0x00eu) ^ ((x << 4) & 0x080u) ^
+                   ((x << 5) & 0x200u) ^ ((x << 6) & 0x800u);
+        case 4u:
+            return ((y << 4) & 0x070u) ^ ((y << 5) & 0x100u) ^ ((y << 6) & 0x400u) ^
+                   ((x << 2) & 0x00cu) ^ ((x << 5) & 0x080u) ^
+                   ((x << 6) & 0x200u) ^ ((x << 7) & 0x800u);
+        case 8u:
+            return ((y << 4) & 0x030u) ^ ((y << 6) & 0x100u) ^ ((y << 7) & 0x400u) ^
+                   ((x << 3) & 0x008u) ^ ((x << 5) & 0x0c0u) ^
+                   ((x << 6) & 0x200u) ^ ((x << 7) & 0x800u);
+        default:
+            return ((y << 4) & 0x030u) ^ ((y << 6) & 0x100u) ^ ((y << 7) & 0x400u) ^
+                   ((x << 6) & 0x0c0u) ^ ((x << 7) & 0x200u) ^ ((x << 8) & 0x800u);
+    }
+}
+
+uint standard64Extra(uint x, uint y) {
+    switch (ELEMENT_BYTES) {
+        case 1u:
+            return ((x << 7) & 0x2000u) ^ ((x << 8) & 0x8000u) ^
+                   ((y << 6) & 0x1000u) ^ ((y << 7) & 0x4000u);
+        case 2u:
+            return ((x << 7) & 0x2000u) ^ ((x << 8) & 0x8000u) ^
+                   ((y << 7) & 0x1000u) ^ ((y << 8) & 0x4000u);
+        case 4u:
+            return ((x << 8) & 0x2000u) ^ ((x << 9) & 0x8000u) ^
+                   ((y << 7) & 0x1000u) ^ ((y << 8) & 0x4000u);
+        case 8u:
+            return ((x << 8) & 0x2000u) ^ ((x << 9) & 0x8000u) ^
+                   ((y << 8) & 0x1000u) ^ ((y << 9) & 0x4000u);
+        default:
+            return ((x << 9) & 0x2000u) ^ ((x << 10) & 0x8000u) ^
+                   ((y << 8) & 0x1000u) ^ ((y << 9) & 0x4000u);
+    }
+}
+
+
+uint renderTargetOffset(uint x, uint y) {
+    uint offset = 0u;
+    switch (ELEMENT_BYTES) {
+        case 1u:
+            offset ^= (y << 2u) & 0x0008u;
+            offset ^= (y << 4u) & 0x0010u;
+            offset ^= (y << 3u) & 0x00a0u;
+            offset ^= (y << 5u) & 0x0f00u;
+            offset ^= (y << 6u) & 0x1000u;
+            offset ^= (y << 7u) & 0x4000u;
+            offset ^= x & 0x0007u;
+            offset ^= (x << 3u) & 0x0040u;
+            offset ^= (x << 5u) & 0x0300u;
+            offset ^= (x << 4u) & 0x0400u;
+            offset ^= (x << 6u) & 0x0800u;
+            offset ^= (x << 7u) & 0x2000u;
+            offset ^= (x << 8u) & 0x8000u;
+            break;
+        case 2u:
+            offset ^= (y << 4u) & 0x0070u;
+            offset ^= (y << 5u) & 0x0f00u;
+            offset ^= (y << 8u) & 0x5000u;
+            offset ^= (x << 1u) & 0x000eu;
+            offset ^= (x << 4u) & 0x0480u;
+            offset ^= (x << 5u) & 0x0300u;
+            offset ^= (x << 6u) & 0x0800u;
+            offset ^= (x << 7u) & 0x2000u;
+            offset ^= (x << 8u) & 0x8000u;
+            break;
+        case 4u:
+            offset ^= (y << 4u) & 0x0070u;
+            offset ^= (y << 5u) & 0x0f00u;
+            offset ^= (y << 9u) & 0x1000u;
+            offset ^= (y << 8u) & 0x4000u;
+            offset ^= (x << 2u) & 0x000cu;
+            offset ^= (x << 5u) & 0x0380u;
+            offset ^= (x << 4u) & 0x0400u;
+            offset ^= (x << 6u) & 0x0800u;
+            offset ^= (x << 9u) & 0xa000u;
+            break;
+        case 8u:
+            offset ^= (y << 4u) & 0x0010u;
+            offset ^= (y << 6u) & 0x0080u;
+            offset ^= (y << 5u) & 0x0f00u;
+            offset ^= (y << 10u) & 0x5000u;
+            offset ^= (x << 3u) & 0x0008u;
+            offset ^= (x << 4u) & 0x0460u;
+            offset ^= (x << 5u) & 0x0300u;
+            offset ^= (x << 6u) & 0x0800u;
+            offset ^= (x << 10u) & 0x2000u;
+            offset ^= (x << 9u) & 0x8000u;
+            break;
+        case 16u:
+            offset ^= (x << 4u) & 0x0410u;
+            offset ^= (x << 5u) & 0x0340u;
+            offset ^= (x << 6u) & 0x0800u;
+            offset ^= (x << 11u) & 0xa000u;
+            offset ^= (y << 5u) & 0x0f20u;
+            offset ^= (y << 6u) & 0x0080u;
+            offset ^= (y << 10u) & 0x1000u;
+            offset ^= (y << 11u) & 0x4000u;
+            break;
+    }
+    uint z = params.arrayLayer;
+    return offset ^ ((z & 8u) << 5u) ^ ((z & 4u) << 7u) ^ ((z & 2u) << 9u) ^ ((z & 1u) << 11u);
+}
+
+uint blockOffset(uvec2 p) {
+    if (TILE_FAMILY == 2u) {
+        return renderTargetOffset(p.x, p.y);
+    }
+    uint offset = standardOffset(p.x, p.y);
+    if (BLOCK_BYTES > 4096u) {
+        offset ^= standard64Extra(p.x, p.y);
+    }
+    return offset & (BLOCK_BYTES - 1u);
+}
+
+uvec2 blockExtent() {
+    uint width;
+    if (BLOCK_BYTES <= 256u) {
+        width = ELEMENT_BYTES <= 2u ? 16u : (ELEMENT_BYTES <= 8u ? 8u : 4u);
+    } else if (BLOCK_BYTES <= 4096u) {
+        width = ELEMENT_BYTES <= 2u ? 64u : (ELEMENT_BYTES <= 8u ? 32u : 16u);
+    } else {
+        width = ELEMENT_BYTES <= 2u ? 256u : (ELEMENT_BYTES <= 8u ? 128u : 64u);
+    }
+    return uvec2(width, BLOCK_BYTES / (width * ELEMENT_BYTES));
+}
+
+void copyElement(uint src, uint dst) {
+    if (ELEMENT_BYTES >= 4u) {
+        for (uint i = 0u; i < ELEMENT_BYTES; i += 4u) {
+            outputBuffer.data[(dst + i) >> 2] = inputBuffer.data[(src + i) >> 2];
+        }
+    } else {
+        uint mask = ELEMENT_BYTES == 1u ? 0xffu : 0xffffu;
+        uint value = (inputBuffer.data[src >> 2] >> ((src & 3u) * 8u)) & mask;
+        uint shift = (dst & 3u) * 8u;
+        atomicAnd(outputBuffer.data[dst >> 2], ~(mask << shift));
+        atomicOr(outputBuffer.data[dst >> 2], value << shift);
+    }
+}
+
+void main() {
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= params.width || p.y >= params.height) {
+        return;
+    }
+
+    uint linearOffset = p.y * params.pitchBytes + p.x * ELEMENT_BYTES;
+
+    if (TILE_FAMILY == 0u) {
+        // kLinear: guest and host layouts match; a straight copy at the
+        // same pitch, no swizzle.
+        copyElement(params.srcBase + linearOffset, params.dstBase + linearOffset);
+        return;
+    }
+
+    uvec2 swizzle = p;
+    uvec2 block = uvec2(0u);
+    if (params.tail != 0u) {
+        swizzle += uvec2(params.tailX, params.tailY);
+    } else {
+        block = p / blockExtent();
+    }
+
+    uint blockIndex = block.y * params.blocksPerRow + block.x;
+    uint tiledOffset = blockIndex * BLOCK_BYTES + blockOffset(swizzle);
+
+    copyElement(params.srcBase + tiledOffset, params.dstBase + linearOffset);
+}
+

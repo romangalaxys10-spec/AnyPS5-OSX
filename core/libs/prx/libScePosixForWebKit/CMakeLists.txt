@@ -1,0 +1,6 @@
+add_library(libScePosixForWebKit SHARED EXCLUDE_FROM_ALL Export.cpp Resolver.cpp)
+target_include_directories(libScePosixForWebKit PRIVATE ${LIBS_INCLUDE_DIR})
+if(WIN32)
+    target_link_libraries(libScePosixForWebKit PRIVATE ws2_32)
+endif()
+configure_windows_unwind(libScePosixForWebKit)

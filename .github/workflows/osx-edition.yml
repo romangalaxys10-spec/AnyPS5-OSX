@@ -1,0 +1,296 @@
+name: OSX Edition Build
+
+# AnyPS5 OSX Edition CI — macOS (Metal/MetalFX + MoltenVK), Linux (Vulkan),
+# Windows (MinGW/winlibs) + dotnet-published Ryujinx switch engine.
+# Derived from boykopovar/AnyPS5 (GPL-2.0), see docs/UPSTREAM_README.md and NOTICE.
+
+on:
+  push:
+    branches: [osx-edition, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (x86_64 build + arm64 relinker + Metal probe)
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Select Xcode 16
+        run: |
+          XCODE_APP="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)"
+          if [ -z "${XCODE_APP}" ]; then
+            echo "No Xcode_16*.app found in /Applications:" >&2
+            ls /Applications | grep -i xcode >&2 || true
+            exit 1
+          fi
+          echo "Selecting ${XCODE_APP}"
+          sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
+          xcodebuild -version
+          clang++ --version
+
+      # molten-vk provides the Vulkan loader/ICD so VulkanDevice compiles and
+      # the Vulkan fallback backend is available at runtime on macOS.
+      - name: Install build dependencies (cmake, ninja, MoltenVK)
+        run: brew install cmake ninja molten-vk
+
+      - name: Configure (x86_64, Release, AUTO GPU backend)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DANYPS5_GPU_BACKEND=AUTO \
+            -DBUILD_TESTING=ON \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,/opt/homebrew/lib"
+
+      - name: Build (relinker, nid_patcher, libs, anyps5-launcher)
+        run: cmake --build build --target relinker nid_patcher libs anyps5-launcher --parallel 3
+
+      # `libs` is a custom target (not part of "all"), so it is built above;
+      # this second pass builds the remaining BUILD_TESTING CTest binaries.
+      - name: Build remaining CTest binaries
+        run: cmake --build build --parallel 3
+
+      # x86_64 binaries run under Rosetta 2 on macos-15 (M-series) runners.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      # Report-only: the probe always exits 0 and echoes METAL_DEVICE=ok|none
+      # plus METALFX_SPATIAL=available|unavailable. Only meaningful on arm64.
+      - name: Metal device probe (report-only, arm64 hosts)
+        run: |
+          if [ "$(uname -m)" = "arm64" ]; then
+            bash scripts/metal_probe.sh
+          else
+            echo "METAL_DEVICE=skipped (Metal probe only meaningful on arm64 hosts)"
+          fi
+
+      - name: Arm64 variant (relinker only)
+        run: |
+          cmake -S . -B build-arm64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DANYPS5_GPU_BACKEND=AUTO \
+            -DBUILD_TESTING=ON \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,/opt/homebrew/lib"
+          cmake --build build-arm64 --target relinker --parallel 3
+
+      - name: Upload macOS x64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: osx-edition-macos-x64
+          path: |
+            build/relinker
+            build/libs/*.prx
+            build/anyps5-launcher
+          if-no-files-found: warn
+
+      - name: Upload macOS arm64 relinker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: osx-edition-macos-arm64-relinker
+          path: build-arm64/relinker
+          if-no-files-found: warn
+
+  linux:
+    name: Linux (Vulkan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libsdl2-dev
+
+      - name: Configure (Release, AUTO GPU backend)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANYPS5_GPU_BACKEND=AUTO \
+            -DBUILD_TESTING=ON
+
+      - name: Build (relinker, nid_patcher, libs, anyps5-launcher)
+        run: cmake --build build --target relinker nid_patcher libs anyps5-launcher --parallel 3
+
+      - name: Build remaining CTest binaries
+        run: cmake --build build --parallel 3
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: osx-edition-linux-x64
+          path: |
+            build/relinker
+            build/libs/*.prx
+            build/anyps5-launcher
+          if-no-files-found: warn
+
+  windows:
+    name: Windows (MinGW winlibs)
+    runs-on: windows-2022
+    timeout-minutes: 180
+    # Hard requirement (upstream: MinGW-w64 GCC 15.2.0 winlibs); the tolerance
+    # lives in the winlibs asset resolution below, not in job-level tolerance.
+    continue-on-error: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install Ninja
+        shell: pwsh
+        run: choco install ninja -y --no-progress
+
+      # The pinned winlibs URL version may drift: HEAD-check it first, then
+      # query the latest release via gh api and pick the x86_64-posix-seh ucrt
+      # asset containing 'gcc-15' first, falling back to 'gcc-14'.
+      - name: Resolve winlibs MinGW asset (pinned, with gcc-15 -> gcc-14 fallback)
+        id: winlibs
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinned = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/15.2.0posix-13.0.0-msvcrt-r2/winlibs-x86_64-posix-seh-gcc-15.2.0-llvm-19.1.7-mingw-w64ucrt-13.0.0-r2.zip'
+          $asset = ''
+          try {
+            $head = Invoke-WebRequest -Uri $pinned -Method Head -MaximumRedirection 10
+            if ($head.StatusCode -eq 200) { $asset = $pinned }
+          } catch {
+            Write-Host "Pinned winlibs URL unavailable (version may have drifted): $($_.Exception.Message)"
+          }
+          if (-not $asset) {
+            Write-Host 'Querying latest winlibs release via gh api...'
+            $urls = @(gh api repos/brechtsanders/winlibs_mingw/releases/latest --jq '.assets[].browser_download_url')
+            $asset = @($urls | Where-Object { $_ -match 'x86_64-posix-seh' -and $_ -match 'ucrt' -and $_ -match 'gcc-15' }) | Select-Object -First 1
+            if (-not $asset) {
+              Write-Host 'No gcc-15 asset found; falling back to gcc-14'
+              $asset = @($urls | Where-Object { $_ -match 'x86_64-posix-seh' -and $_ -match 'ucrt' -and $_ -match 'gcc-14' }) | Select-Object -First 1
+            }
+          }
+          if (-not $asset) { throw 'No suitable winlibs x86_64-posix-seh ucrt asset found (tried gcc-15, then gcc-14).' }
+          Write-Host "Selected winlibs asset: $asset"
+          "url=$asset" >> $env:GITHUB_OUTPUT
+
+      - name: Install winlibs MinGW toolchain (C:\mingw64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'winlibs.zip'
+          Invoke-WebRequest -Uri '${{ steps.winlibs.outputs.url }}' -OutFile $zip -MaximumRedirection 10
+          $extract = Join-Path $env:RUNNER_TEMP 'winlibs-extract'
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $gpp = Get-ChildItem $extract -Recurse -Filter 'g++.exe' | Select-Object -First 1
+          if (-not $gpp) { throw 'g++.exe not found in extracted winlibs archive' }
+          $binDir = $gpp.DirectoryName
+          $root = Split-Path -Parent $binDir
+          if (Test-Path 'C:\mingw64') { Remove-Item -Recurse -Force 'C:\mingw64' }
+          Move-Item $root 'C:\mingw64'
+          Add-Content $env:GITHUB_PATH 'C:\mingw64\bin'
+          'CC=C:\mingw64\bin\gcc.exe' >> $env:GITHUB_ENV
+          'CXX=C:\mingw64\bin\g++.exe' >> $env:GITHUB_ENV
+          & 'C:\mingw64\bin\g++.exe' --version
+
+      - name: Configure (Release, AUTO GPU backend)
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DANYPS5_GPU_BACKEND=AUTO -DBUILD_TESTING=ON
+
+      - name: Build (relinker, libs, anyps5-launcher)
+        shell: pwsh
+        run: cmake --build build --target relinker libs anyps5-launcher --parallel 3
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: osx-edition-windows-x64
+          path: |
+            build/relinker.exe
+            build/libs/*.prx
+            build/anyps5-launcher.exe
+          if-no-files-found: warn
+
+  switch-engine:
+    name: Switch engine (Ryujinx linux-x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout (with switch/Ryujinx submodule)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # NOTE: no macOS runner variant here on purpose (single ubuntu job for CI
+      # speed). The exact macOS publish command + app-translocation caveat are
+      # documented in scripts/run-switch-engine.sh.
+      - name: Publish Ryujinx (linux-x64)
+        run: |
+          if [ ! -d switch/Ryujinx ]; then
+            echo "::warning::switch/Ryujinx submodule not present; skipping switch engine publish"
+            exit 0
+          fi
+          cd switch/Ryujinx
+          dotnet publish src/Ryujinx.Ava -c Release -r linux-x64 --self-contained false -o ../../publish/linux \
+            || dotnet publish src/Ryujinx -c Release -r linux-x64 --self-contained false -o ../../publish/linux
+          test -d ../../publish/linux
+          echo "Ryujinx published to $(cd ../../publish/linux && pwd)"
+
+      - name: Upload switch engine artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: osx-edition-switch-engine-linux-x64
+          path: publish/linux
+          if-no-files-found: warn
+
+  report:
+    name: Report summary
+    needs: [macos, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write build summary
+        run: |
+          {
+            echo "## OSX Edition Build Summary"
+            echo
+            if [ -f docs/OSX_EDITION_REPORT.md ]; then
+              echo "### docs/OSX_EDITION_REPORT.md (head)"
+              echo
+              head -n 100 docs/OSX_EDITION_REPORT.md
+              echo
+              echo "_Trimmed to first 100 lines._"
+            else
+              echo "docs/OSX_EDITION_REPORT.md not found (report not generated yet; not a failure)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

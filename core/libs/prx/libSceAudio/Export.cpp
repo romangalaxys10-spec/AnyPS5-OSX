@@ -1,0 +1,38 @@
+#include <cstdint>
+#include "SceTypes.hpp"
+#include "prx/libc/include/General.hpp"
+
+extern "C" {
+
+using SceAudioOutPortId = std::int32_t;
+
+std::int32_t APS5_VABI sceAudioOutInit(void) {
+ NotImplemented_nid_no_patch(__func__);
+ return 0;
+}
+
+SceAudioOutPortId APS5_VABI sceAudioOutOpen(std::int32_t userId, std::int32_t type, std::int32_t index, std::uint32_t len, std::uint32_t freq, std::uint32_t param) {
+    (void)userId; (void)type; (void)index; (void)len; (void)freq; (void)param;
+    NotImplemented_nid_no_patch(__func__);
+    return 0;
+}
+
+std::int32_t APS5_VABI sceAudioOutOutput(SceAudioOutPortId handle, const void* ptr) {
+    (void)handle; (void)ptr;
+    NotImplemented_nid_no_patch(__func__);
+    return 0;
+}
+
+std::int32_t APS5_VABI sceAudioOutSetVolume(SceAudioOutPortId handle, std::int32_t flag, std::int32_t* vol) {
+    (void)handle; (void)flag; (void)vol;
+    NotImplemented_nid_no_patch(__func__);
+    return 0;
+}
+
+std::int32_t APS5_VABI sceAudioOutClose(SceAudioOutPortId handle) {
+    (void)handle;
+    NotImplemented_nid_no_patch(__func__);
+    return 0;
+}
+
+}

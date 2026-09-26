@@ -1,0 +1,28 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0, std430) buffer TiledPixels { uint tiled[]; };
+layout(set = 0, binding = 1, std430) buffer LinearPixels { uint linear[]; };
+layout(push_constant) uniform Parameters {
+    uint width;
+    uint height;
+    uint blocksPerRow;
+    uint mode;
+} parameters;
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+    if (x >= parameters.width || y >= parameters.height) return;
+    uint linearIndex = y * parameters.width + x;
+    uint tiledIndex = linearIndex;
+    if ((parameters.mode & 4u) != 0u) {
+        uint offset = ((y << 4u) & 0x0070u) ^ ((y << 5u) & 0x0f00u) ^ ((y << 9u) & 0x1000u) ^ ((y << 8u) & 0x4000u)
+            ^ ((x << 2u) & 0x000cu) ^ ((x << 5u) & 0x0380u) ^ ((x << 4u) & 0x0400u) ^ ((x << 6u) & 0x0800u) ^ ((x << 9u) & 0xa000u);
+        tiledIndex = ((y / 128u) * parameters.blocksPerRow + x / 128u) * 16384u + offset / 4u;
+    }
+    uint pixel = (parameters.mode & 1u) != 0u ? linear[linearIndex] : tiled[tiledIndex];
+    if ((parameters.mode & 2u) != 0u) pixel = (pixel & 0xff00ff00u) | ((pixel & 0xffu) << 16u) | ((pixel >> 16u) & 0xffu);
+    if ((parameters.mode & 1u) != 0u) tiled[tiledIndex] = pixel;
+    else linear[linearIndex] = pixel;
+}

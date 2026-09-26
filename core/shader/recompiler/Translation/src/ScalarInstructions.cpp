@@ -1,0 +1,293 @@
+#include "Translation/ScalarInstructions.hpp"
+#include "Translation/TranslationContext.hpp"
+#include <stdexcept>
+
+namespace ShaderRecompiler {
+
+void TranslateScalarInstruction(IrBuilder& builder, const RdnaInstruction& instruction) {
+    throw std::runtime_error("TranslateScalarInstruction not implemented");
+}
+
+bool TranslationContext::emitScalar(const RdnaInstruction& inst) {
+    switch (inst.op) {
+    case RdnaOpcode::SMovB32:
+    case RdnaOpcode::SMovkI32:
+        movB32(inst, false);
+        return true;
+    case RdnaOpcode::SMovB64:
+        sMovB64(inst);
+        return true;
+    case RdnaOpcode::SWqmB32:
+        sWqm(inst, false);
+        return true;
+    case RdnaOpcode::SWqmB64:
+        sWqm(inst, true);
+        return true;
+    case RdnaOpcode::SGetpcB64:
+        sGetpcB64(inst);
+        return true;
+    case RdnaOpcode::SSetpcB64:
+        return true;
+    case RdnaOpcode::SSubvectorLoopBegin:
+        sSubvectorLoop(inst, true);
+        return true;
+    case RdnaOpcode::SSubvectorLoopEnd:
+        sSubvectorLoop(inst, false);
+        return true;
+    case RdnaOpcode::SCselectB32:
+        sCselectB32(inst);
+        return true;
+    case RdnaOpcode::SCselectB64:
+        scalarSelect64(inst, sourceAt(inst, 1u));
+        return true;
+    case RdnaOpcode::SCmovB64:
+        scalarSelect64(inst, inst.destination);
+        return true;
+    case RdnaOpcode::SSetregB32:
+        emitControlNop();
+        return true;
+    case RdnaOpcode::SWaitcnt:
+        emitWaitcnt();
+        return true;
+    case RdnaOpcode::SAndSaveexecB32:
+        sSaveexec(inst, IrOpcode::LogicalAnd, false, false, false);
+        return true;
+    case RdnaOpcode::SAndn1SaveexecB32:
+        sSaveexec(inst, IrOpcode::LogicalAnd, false, true, false);
+        return true;
+    case RdnaOpcode::SOrn2SaveexecB32:
+        sSaveexec(inst, IrOpcode::LogicalOr, true, false, false);
+        return true;
+    case RdnaOpcode::SAndSaveexecB64:
+        sSaveexec(inst, IrOpcode::LogicalAnd, false, false, true);
+        return true;
+    case RdnaOpcode::SAndn1SaveexecB64:
+        sSaveexec(inst, IrOpcode::LogicalAnd, false, true, true);
+        return true;
+    case RdnaOpcode::SOrn2SaveexecB64:
+        sSaveexec(inst, IrOpcode::LogicalOr, true, false, true);
+        return true;
+    case RdnaOpcode::SAddU32:
+        addU32(inst, false, false);
+        return true;
+    case RdnaOpcode::SAddcU32:
+        addU32(inst, false, true);
+        return true;
+    case RdnaOpcode::SSubU32:
+        subU32(inst, false, false);
+        return true;
+    case RdnaOpcode::SSubbU32:
+        subbU32(inst, false, false);
+        return true;
+    case RdnaOpcode::SAbsdiffI32:
+        sAbsdiffI32(inst);
+        return true;
+    case RdnaOpcode::SAddI32:
+        sAddSubI32(inst, false);
+        return true;
+    case RdnaOpcode::SSubI32:
+        sAddSubI32(inst, true);
+        return true;
+    case RdnaOpcode::SLshl1AddU32:
+        sLshlAddU32(inst, 1u);
+        return true;
+    case RdnaOpcode::SLshl2AddU32:
+        sLshlAddU32(inst, 2u);
+        return true;
+    case RdnaOpcode::SLshl3AddU32:
+        sLshlAddU32(inst, 3u);
+        return true;
+    case RdnaOpcode::SLshl4AddU32:
+        sLshlAddU32(inst, 4u);
+        return true;
+    case RdnaOpcode::SMinI32:
+        scalarMinMax32(inst, IrOpcode::SMin32, IrOpcode::SLessThan32);
+        return true;
+    case RdnaOpcode::SMaxI32:
+        scalarMinMax32(inst, IrOpcode::SMax32, IrOpcode::SGreaterThan32);
+        return true;
+    case RdnaOpcode::SMinU32:
+        scalarMinMax32(inst, IrOpcode::UMin32, IrOpcode::ULessThan32);
+        return true;
+    case RdnaOpcode::SMaxU32:
+        scalarMinMax32(inst, IrOpcode::UMax32, IrOpcode::UGreaterThan32);
+        return true;
+    case RdnaOpcode::SCmpEqU32:
+    case RdnaOpcode::SCmpEqI32:
+        emitIntegerCompare(inst, IrOpcode::IEqual32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpLgU32:
+    case RdnaOpcode::SCmpLgI32:
+        emitIntegerCompare(inst, IrOpcode::INotEqual32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpGtU32:
+        emitIntegerCompare(inst, IrOpcode::UGreaterThan32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpGeU32:
+        emitIntegerCompare(inst, IrOpcode::UGreaterThanEqual32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpLtU32:
+        emitIntegerCompare(inst, IrOpcode::ULessThan32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpLeU32:
+        emitIntegerCompare(inst, IrOpcode::ULessThanEqual32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpGtI32:
+        emitIntegerCompare(inst, IrOpcode::SGreaterThan32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpGeI32:
+        emitIntegerCompare(inst, IrOpcode::SGreaterThanEqual32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpLtI32:
+        emitIntegerCompare(inst, IrOpcode::SLessThan32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpLeI32:
+        emitIntegerCompare(inst, IrOpcode::SLessThanEqual32, IrType::U32, true, false);
+        return true;
+    case RdnaOpcode::SCmpEqU64:
+        emitIntegerCompare(inst, IrOpcode::IEqual64, IrType::U64, true, false);
+        return true;
+    case RdnaOpcode::SCmpLgU64:
+        emitIntegerCompare(inst, IrOpcode::INotEqual64, IrType::U64, true, false);
+        return true;
+    case RdnaOpcode::SAndB64:
+        return sU64Mask(inst, IrOpcode::LogicalAnd, IrOpcode::BitwiseAnd32, false, false, false);
+    case RdnaOpcode::SAndn2B64:
+        return sU64Mask(inst, IrOpcode::LogicalAnd, IrOpcode::BitwiseAnd32, true, false, false);
+    case RdnaOpcode::SOrB64:
+        return sU64Mask(inst, IrOpcode::LogicalOr, IrOpcode::BitwiseOr32, false, false, false);
+    case RdnaOpcode::SOrn2B64:
+        return sU64Mask(inst, IrOpcode::LogicalOr, IrOpcode::BitwiseOr32, true, false, false);
+    case RdnaOpcode::SXorB64:
+        return sU64Mask(inst, IrOpcode::LogicalXor, IrOpcode::BitwiseXor32, false, false, false);
+    case RdnaOpcode::SNandB64:
+        return sU64Mask(inst, IrOpcode::LogicalAnd, IrOpcode::BitwiseAnd32, false, true, false);
+    case RdnaOpcode::SNorB64:
+        return sU64Mask(inst, IrOpcode::LogicalOr, IrOpcode::BitwiseOr32, false, true, false);
+    case RdnaOpcode::SXnorB64:
+        return sU64Mask(inst, IrOpcode::LogicalXor, IrOpcode::BitwiseXor32, false, true, false);
+    case RdnaOpcode::SNotB64:
+        return sU64Mask(inst, IrOpcode::LogicalAnd, IrOpcode::BitwiseAnd32, false, false, true);
+    case RdnaOpcode::SAbsI32:
+        return simpleInteger(inst, IrOpcode::IAbs32, IrType::U32, false, false, true);
+    case RdnaOpcode::SMulI32:
+    case RdnaOpcode::SMulkI32:
+        return simpleInteger(inst, IrOpcode::IMul32, IrType::U32, false, false, false);
+    case RdnaOpcode::SMulHiU32:
+        return simpleInteger(inst, IrOpcode::UMulHi, IrType::U32, false, false, false);
+    case RdnaOpcode::SMulHiI32:
+        return simpleInteger(inst, IrOpcode::SMulHi, IrType::U32, false, false, false);
+    case RdnaOpcode::SAndB32:
+        return simpleInteger(inst, IrOpcode::BitwiseAnd32, IrType::U32, false, false, true);
+    case RdnaOpcode::SOrB32:
+        return simpleInteger(inst, IrOpcode::BitwiseOr32, IrType::U32, false, false, true);
+    case RdnaOpcode::SXorB32:
+        return simpleInteger(inst, IrOpcode::BitwiseXor32, IrType::U32, false, false, true);
+    case RdnaOpcode::SNotB32:
+        return simpleInteger(inst, IrOpcode::BitwiseNot32, IrType::U32, false, false, true);
+    case RdnaOpcode::SBrevB32:
+        return simpleInteger(inst, IrOpcode::BitReverse32, IrType::U32, false, false, false);
+    case RdnaOpcode::SBcnt1I32B32:
+        return simpleInteger(inst, IrOpcode::BitCount32, IrType::U32, false, false, true);
+    case RdnaOpcode::SBcnt1I32B64:
+        return simpleInteger(inst, IrOpcode::BitCount64, IrType::U64, false, false, true);
+    case RdnaOpcode::SFf1I32B32:
+        return simpleInteger(inst, IrOpcode::FindILsb32, IrType::U32, false, false, false);
+    case RdnaOpcode::SLshlB32:
+        return simpleInteger(inst, IrOpcode::ShiftLeftLogical32, IrType::U32, false, true, true);
+    case RdnaOpcode::SLshrB32:
+        return simpleInteger(inst, IrOpcode::ShiftRightLogical32, IrType::U32, false, true, true);
+    case RdnaOpcode::SAshrI32:
+        return simpleInteger(inst, IrOpcode::ShiftRightArithmetic32, IrType::U32, false, true, true);
+    case RdnaOpcode::SLshlB64:
+        return simpleInteger(inst, IrOpcode::ShiftLeftLogical64, IrType::U64, false, false, true);
+    case RdnaOpcode::SLshrB64:
+        return simpleInteger(inst, IrOpcode::ShiftRightLogical64, IrType::U64, false, false, true);
+    case RdnaOpcode::SAndn2B32:
+        return composedIntegerBinary(inst, IrOpcode::BitwiseAnd32, true, false, true);
+    case RdnaOpcode::SOrn2B32:
+        return composedIntegerBinary(inst, IrOpcode::BitwiseOr32, true, false, true);
+    case RdnaOpcode::SNandB32:
+        return composedIntegerBinary(inst, IrOpcode::BitwiseAnd32, false, true, true);
+    case RdnaOpcode::SNorB32:
+        return composedIntegerBinary(inst, IrOpcode::BitwiseOr32, false, true, true);
+    case RdnaOpcode::SXnorB32:
+        return composedIntegerBinary(inst, IrOpcode::BitwiseXor32, false, true, true);
+    case RdnaOpcode::SFf1I32B64:
+        return sFf1I32B64(inst);
+    case RdnaOpcode::SFlbitI32B32:
+        return vFfbh32(inst, false);
+    case RdnaOpcode::SFlbitI32B64:
+        return sFlbitI32B64(inst);
+    case RdnaOpcode::SBitset0B32:
+        return sBitsetB32(inst, false);
+    case RdnaOpcode::SBitset1B32:
+        return sBitsetB32(inst, true);
+    case RdnaOpcode::SBitset0B64:
+        return sBitsetB64(inst, false);
+    case RdnaOpcode::SBitset1B64:
+        return sBitsetB64(inst, true);
+    case RdnaOpcode::SBitreplicateB64B32:
+        return sBitreplicateB64B32(inst);
+    case RdnaOpcode::SQuadmaskB64:
+        return sQuadmaskB64(inst);
+    case RdnaOpcode::SBfmB32:
+        return bfmB32(inst);
+    case RdnaOpcode::SBfmB64:
+        return sBfmB64(inst);
+    case RdnaOpcode::SBfeU32:
+        return sBfeU32(inst, false);
+    case RdnaOpcode::SBfeI32:
+        return sBfeU32(inst, true);
+    case RdnaOpcode::SBfeU64:
+        return sBfeU64(inst);
+    case RdnaOpcode::SBitcmp0B32:
+        return sBitcmpB32(inst, false);
+    case RdnaOpcode::SBitcmp1B32:
+        return sBitcmpB32(inst, true);
+    case RdnaOpcode::SPackLlB32B16:
+        return packB16(inst, false, false);
+    case RdnaOpcode::SPackLhB32B16:
+        return packB16(inst, false, true);
+    case RdnaOpcode::SPackHhB32B16:
+        return packB16(inst, true, true);
+    case RdnaOpcode::SNop:
+    case RdnaOpcode::SSleep:
+    case RdnaOpcode::SSetprio:
+    case RdnaOpcode::STrap:
+        emitControlNop();
+        return true;
+    case RdnaOpcode::SWaitcntDepctr:
+        emitWaitcnt();
+        return true;
+    case RdnaOpcode::SBarrier:
+        sBarrier();
+        return true;
+    case RdnaOpcode::SSendmsg:
+        sSendmsg(inst);
+        return true;
+    case RdnaOpcode::STtracedata:
+        sTtracedata();
+        return true;
+    case RdnaOpcode::SInstPrefetch:
+        sInstPrefetch();
+        return true;
+    case RdnaOpcode::SBranch:
+    case RdnaOpcode::SCbranchScc0:
+    case RdnaOpcode::SCbranchScc1:
+    case RdnaOpcode::SCbranchVccz:
+    case RdnaOpcode::SCbranchVccnz:
+    case RdnaOpcode::SCbranchExecz:
+    case RdnaOpcode::SCbranchExecnz:
+    case RdnaOpcode::SEndpgm:
+        return true;
+    default:
+        return false;
+    }
+}
+
+void TranslateScalarInstruction(TranslationContext& context, const RdnaInstruction& instruction) {
+    throw std::runtime_error("TranslateScalarInstruction not implemented");
+}
+
+}

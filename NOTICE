@@ -1,0 +1,36 @@
+AnyPS5 OSX Edition — component provenance
+==========================================
+
+Base project
+  AnyPS5 by boykopovar — https://github.com/boykopovar/AnyPS5
+  License: GPL-2.0. Upstream commit at fork time: main (2026-09-26).
+  Files: core/**, docs/UPSTREAM_README.md, docs/CONVENTIONS.md, docs/TechnicalDebt.md, LICENSE.
+
+OSX Edition additions (this repository, GPL-2.0)
+  core/relinker/elfpatcher/macos/MacosMachoPatcher.{hpp,cpp}   ELF -> Mach-O output
+  core/libs/nid/{include/nid,src}/MachONidPatcher.{hpp,cpp}    Mach-O NID export patching
+  core/libs/prx/libSceAgcDriver/Execution/include/GpuDevice.hpp
+  core/libs/prx/libSceAgcDriver/Execution/src/GpuDeviceFactory.cpp
+  core/libs/prx/libSceAgcDriver/Execution/include/MetalDevice.hpp
+  core/libs/prx/libSceAgcDriver/Execution/src/MetalDevice.mm   Metal + MetalFX backend
+  core/libs/prx/libc/src/exception/Unwind.cpp                  Darwin eh_frame resolution
+  launcher/**                                                  hybrid PS5/Switch launcher
+  scripts/**, .github/workflows/osx-edition.yml                build/CI infrastructure
+  Darwin build enablement patches across CMakeLists.txt, libkernel, libSceVideoOut.
+
+Switch engine (pinned submodule, not modified)
+  Ryujinx by alula (community source mirror of Ryujinx) — https://github.com/alula/Ryujinx
+  License: MIT. Pinned: qlaunch 4930dced25c0d9ec33096b0f2601d262daa477bf.
+
+Optional external component (not merged, not distributed by this repository)
+  OptiScaler — https://github.com/optiscaler/OptiScaler
+  License: GPL-3.0. Kept strictly separate from this GPL-2.0 codebase; downloaded and
+  used by end users under its own license terms.
+
+Third-party dependencies (pinned submodules, unmodified)
+  SDL2 (zlib), Vulkan-Headers / SPIRV-Headers / SPIRV-Tools / glslang (Apache-2.0 OR MIT),
+  VulkanMemoryAllocator (MIT), LibAtrac9 (MIT), SPIRV-Cross (Apache-2.0 OR MIT OR ISC/Khronos).
+
+Reference implementations consulted for the macOS recipe
+  KytyPS5 — https://github.com/KytyPS5/KytyPS5 (GPL-2.0): MoltenVK bundling + codesign
+  workflow and macOS CI patterns. No code copied.

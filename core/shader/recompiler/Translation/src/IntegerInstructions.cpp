@@ -1,0 +1,589 @@
+#include "Translation/IntegerInstructions.hpp"
+#include "Translation/TranslationContext.hpp"
+#include <array>
+#include <stdexcept>
+
+namespace ShaderRecompiler {
+
+void TranslateIntegerInstruction(IrBuilder& builder, const RdnaInstruction& instruction) {
+    throw std::runtime_error("TranslateIntegerInstruction not implemented");
+}
+
+bool TranslationContext::integer16Shift(const RdnaInstruction& inst, IrOpcode opcode, bool arithmetic) {
+    const IrU32 value = readU16AsU32(sourceAt(inst, 1u), arithmetic);
+    const IrU32 count(ir.BitwiseAnd(readU16AsU32(sourceAt(inst, 0u), false).Value(), ir.Constant(15u)));
+    const IrU32 result(ir.Emit(opcode, IrType::U32, {&value.Value(), &count.Value()}));
+    write16Bits(inst.destination, IrU32(ir.BitwiseAnd(result.Value(), ir.Constant(0xffffu))));
+    return true;
+}
+
+bool TranslationContext::integer16Binary(const RdnaInstruction& inst, IrOpcode opcode, bool sign) {
+    const IrU32 lhs = readU16AsU32(sourceAt(inst, 0u), sign);
+    const IrU32 rhs = readU16AsU32(sourceAt(inst, 1u), sign);
+    const IrU32 result(ir.Emit(opcode, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    write16Bits(inst.destination, IrU32(ir.BitwiseAnd(result.Value(), ir.Constant(0xffffu))));
+    return true;
+}
+
+bool TranslationContext::vMed3I16(const RdnaInstruction& inst) {
+    const IrU32 first = readU16AsU32(sourceAt(inst, 0u), true);
+    const IrU32 second = readU16AsU32(sourceAt(inst, 1u), true);
+    const IrU32 third = readU16AsU32(sourceAt(inst, 2u), true);
+    const IrU32 result(ir.Emit(IrOpcode::SMedTri32, IrType::U32, {&first.Value(), &second.Value(), &third.Value()}));
+    write16Bits(inst.destination, IrU32(ir.BitwiseAnd(result.Value(), ir.Constant(0xffffu))));
+    return true;
+}
+
+bool TranslationContext::packedInteger16Shift(const RdnaInstruction& inst, IrOpcode opcode, bool arithmetic) {
+    const auto translateLane = [&](bool highLane) {
+        const IrU32 count(ir.BitwiseAnd(readU16LaneAsU32(sourceAt(inst, 0u), highLane, false).Value(), ir.Constant(15u)));
+        const IrU32 value = readU16LaneAsU32(sourceAt(inst, 1u), highLane, arithmetic);
+        return IrU32(ir.Emit(opcode, IrType::U32, {&value.Value(), &count.Value()}));
+    };
+    const IrU32 low = translateLane(false);
+    const IrU32 high = translateLane(true);
+    const IrU32 result = packU16Lanes(low, high);
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::packedInteger16Binary(const RdnaInstruction& inst, IrOpcode opcode) {
+    const auto translateLane = [&](bool highLane) {
+        const IrU32 lhs = readU16LaneAsU32(sourceAt(inst, 0u), highLane, false);
+        const IrU32 rhs = readU16LaneAsU32(sourceAt(inst, 1u), highLane, false);
+        return IrU32(ir.Emit(opcode, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    };
+    const IrU32 low = translateLane(false);
+    const IrU32 high = translateLane(true);
+    const IrU32 result = packU16Lanes(low, high);
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::packedInteger16Mad(const RdnaInstruction& inst, bool sign) {
+    const auto translateLane = [&](bool highLane) {
+        const IrU32 lhs = readU16LaneAsU32(sourceAt(inst, 0u), highLane, false);
+        const IrU32 rhs = readU16LaneAsU32(sourceAt(inst, 1u), highLane, false);
+        const IrU32 product(ir.IMul(lhs.Value(), rhs.Value()));
+        const IrU32 addend = readU16LaneAsU32(sourceAt(inst, 2u), highLane, sign);
+        return IrU32(ir.IAdd(product.Value(), addend.Value()));
+    };
+    const IrU32 low = translateLane(false);
+    const IrU32 high = translateLane(true);
+    const IrU32 result = packU16Lanes(low, high);
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::packedInteger16MinMax(const RdnaInstruction& inst, IrOpcode opcode, bool sign) {
+    const auto translateLane = [&](bool highLane) {
+        const IrU32 lhs = readU16LaneAsU32(sourceAt(inst, 0u), highLane, sign);
+        const IrU32 rhs = readU16LaneAsU32(sourceAt(inst, 1u), highLane, sign);
+        return IrU32(ir.Emit(opcode, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    };
+    const IrU32 low = translateLane(false);
+    const IrU32 high = translateLane(true);
+    const IrU32 result = packU16Lanes(low, high);
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+IrU1 TranslationContext::u64MaskBinary(const RdnaInstruction& inst, IrOpcode opcode, bool negateRhs, bool negateResult) {
+    const IrU1 lhs = readMask(sourceAt(inst, 0u));
+    const IrU1 rhsRaw = readMask(sourceAt(inst, 1u));
+    IrValue& rhs = negateRhs ? ir.LogicalNot(rhsRaw.Value()) : rhsRaw.Value();
+    const IrU1 result(ir.Emit(opcode, IrType::U1, {&lhs.Value(), &rhs}));
+    return negateResult ? IrU1(ir.LogicalNot(result.Value())) : result;
+}
+
+bool TranslationContext::sU64Mask(const RdnaInstruction& inst, IrOpcode logicalOpcode, IrOpcode bitOpcode, bool negateRhs, bool negateResult, bool unary) {
+    const IrU1 invocationResult = unary ? IrU1(ir.LogicalNot(readMask(sourceAt(inst, 0u)).Value())) : u64MaskBinary(inst, logicalOpcode, negateRhs, negateResult);
+    const auto isExecOrVcc = [](const RdnaOperand& operand) {
+        switch (operand.kind) {
+        case RdnaOperandKind::ExecLo:
+        case RdnaOperandKind::ExecHi:
+        case RdnaOperandKind::VccLo:
+        case RdnaOperandKind::VccHi:
+            return true;
+        default:
+            return false;
+        }
+    };
+    if (isExecOrVcc(inst.destination) || isExecOrVcc(sourceAt(inst, 0u)) || (inst.sourceCount > 1u && isExecOrVcc(sourceAt(inst, 1u)))) {
+        const std::array<IrU32, 2> mask = writeMask(inst.destination, invocationResult, true);
+        ir.SetScc(ir.INotEqual(ir.BitwiseOr(mask[0].Value(), mask[1].Value()), ir.Constant(0u)));
+        return true;
+    }
+    const std::array<IrU32, 2> lhs = readU32Pair(sourceAt(inst, 0u));
+    IrU1 maskValid = readMaskValid(sourceAt(inst, 0u));
+    if (inst.sourceCount > 1u) {
+        maskValid = IrU1(ir.LogicalAnd(maskValid.Value(), readMaskValid(sourceAt(inst, 1u)).Value()));
+    }
+    std::array<IrU32, 2> result{};
+    if (unary) {
+        result = {IrU32(ir.BitwiseNot(lhs[0].Value())), IrU32(ir.BitwiseNot(lhs[1].Value()))};
+    } else {
+        const std::array<IrU32, 2> rhs = readU32Pair(sourceAt(inst, 1u));
+        for (std::uint32_t component = 0u; component < 2u; ++component) {
+            IrValue& rhsOperand = negateRhs ? ir.BitwiseNot(rhs[component].Value()) : rhs[component].Value();
+            const IrU32 value(ir.Emit(bitOpcode, IrType::U32, {&lhs[component].Value(), &rhsOperand}));
+            result[component] = negateResult ? IrU32(ir.BitwiseNot(value.Value())) : value;
+        }
+    }
+    writeU32Pair(inst.destination, result);
+    if (inst.destination.kind == RdnaOperandKind::ScalarRegister) {
+        const auto dst = static_cast<ScalarReg>(inst.destination.reg);
+        ir.SetThreadBitScalarReg(dst, invocationResult.Value());
+        ir.SetScalarMaskTag(dst, maskValid.Value());
+    }
+    ir.SetScc(ir.INotEqual(ir.BitwiseOr(result[0].Value(), result[1].Value()), ir.Constant(0u)));
+    return true;
+}
+
+bool TranslationContext::simpleInteger(const RdnaInstruction& inst, IrOpcode opcode, IrType type, bool reverse, bool maskShiftCount, bool updateScc) {
+    std::array<IrValue*, 3> args{};
+    for (std::uint32_t index = 0u; index < inst.sourceCount; ++index) {
+        const IrType argType = IrOpcodeArgumentType(opcode, index);
+        const RdnaOperand& operand = sourceAt(inst, reverse && index < 2u ? 1u - index : index);
+        args[index] = readOperand(operand, argType == IrType::Void ? type : argType);
+        if (maskShiftCount && index == 1u) {
+            args[index] = &ir.BitwiseAnd(*args[index], ir.Constant(31u));
+        }
+    }
+    const IrType resultType = IrOpcodeType(opcode);
+    IrValue* result = nullptr;
+    switch (inst.sourceCount) {
+    case 1u:
+        result = &ir.Emit(opcode, resultType, {args[0]});
+        break;
+    case 2u:
+        result = &ir.Emit(opcode, resultType, {args[0], args[1]});
+        break;
+    case 3u:
+        result = &ir.Emit(opcode, resultType, {args[0], args[1], args[2]});
+        break;
+    default:
+        throw std::runtime_error("invalid simple integer source count");
+    }
+    writeOperand(inst.destination, result);
+    if (updateScc) {
+        if (resultType == IrType::U64) {
+            ir.SetScc(ir.Emit(IrOpcode::INotEqual64, IrType::U1, {result, &ir.ConstantU64(0)}));
+        } else {
+            ir.SetScc(ir.INotEqual(*result, ir.Constant(0u)));
+        }
+    }
+    return true;
+}
+
+bool TranslationContext::composedIntegerBinary(const RdnaInstruction& inst, IrOpcode opcode, bool negateRhs, bool negateResult, bool updateScc) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhsRaw = readU32(sourceAt(inst, 1u));
+    const IrU32 rhs = negateRhs ? IrU32(ir.BitwiseNot(rhsRaw.Value())) : rhsRaw;
+    IrU32 result(ir.Emit(opcode, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    if (negateResult) {
+        result = IrU32(ir.BitwiseNot(result.Value()));
+    }
+    writeOperand(inst.destination, &result.Value());
+    if (updateScc) {
+        ir.SetScc(ir.INotEqual(result.Value(), ir.Constant(0u)));
+    }
+    return true;
+}
+
+bool TranslationContext::vAndOrB32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.BitwiseOr(ir.BitwiseAnd(lhs.Value(), rhs.Value()), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vOr3B32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.BitwiseOr(ir.BitwiseOr(lhs.Value(), rhs.Value()), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vXor3B32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.BitwiseXor(ir.BitwiseXor(lhs.Value(), rhs.Value()), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sFf1I32B64(const RdnaInstruction& inst) {
+    const std::array<IrU32, 2> source = extractU64(readU64(sourceAt(inst, 0u)));
+    const IrU32 lowLsb(ir.Emit(IrOpcode::FindILsb32, IrType::U32, {&source[0].Value()}));
+    const IrU32 highLsb(ir.Emit(IrOpcode::FindILsb32, IrType::U32, {&source[1].Value()}));
+    const IrU32 highPosition(ir.IAdd(highLsb.Value(), ir.Constant(32u)));
+    const IrU1 lowNonZero(ir.INotEqual(source[0].Value(), ir.Constant(0u)));
+    const IrU1 highNonZero(ir.INotEqual(source[1].Value(), ir.Constant(0u)));
+    const IrU32 highOrDefault(ir.Select(highNonZero.Value(), highPosition.Value(), ir.Constant(0xffffffffu)));
+    const IrU32 result(ir.Select(lowNonZero.Value(), lowLsb.Value(), highOrDefault.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vFfbh32(const RdnaInstruction& inst, bool sign) {
+    const IrU32 source = readU32(sourceAt(inst, 0u));
+    IrValue& value = sign ? ir.BitwiseXor(source.Value(), ir.ShiftRightArithmetic(source.Value(), ir.Constant(31u))) : source.Value();
+    const IrU32 msb(ir.Emit(IrOpcode::FindUMsb32, IrType::U32, {&value}));
+    const IrU32 position(ir.ISub(ir.Constant(31u), msb.Value()));
+    const IrU1 nonZero(ir.INotEqual(value, ir.Constant(0u)));
+    const IrU32 result(ir.Select(nonZero.Value(), position.Value(), ir.Constant(0xffffffffu)));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sFlbitI32B64(const RdnaInstruction& inst) {
+    const IrU64 source = readU64(sourceAt(inst, 0u));
+    const IrU32 msb(ir.Emit(IrOpcode::FindUMsb64, IrType::U32, {&source.Value()}));
+    const IrU32 position(ir.ISub(ir.Constant(63u), msb.Value()));
+    const IrU1 nonZero(ir.Emit(IrOpcode::INotEqual64, IrType::U1, {&source.Value(), &ir.ConstantU64(0)}));
+    const IrU32 result(ir.Select(nonZero.Value(), position.Value(), ir.Constant(0xffffffffu)));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::integer24(const RdnaInstruction& inst, bool sign, bool addend) {
+    const IrOpcode extractOpcode = sign ? IrOpcode::BitFieldSExtract : IrOpcode::BitFieldUExtract;
+    const IrU32 lhsSource = readU32(sourceAt(inst, 0u));
+    const IrU32 rhsSource = readU32(sourceAt(inst, 1u));
+    const IrU32 lhs(ir.Emit(extractOpcode, IrType::U32, {&lhsSource.Value(), &ir.Constant(0u), &ir.Constant(24u)}));
+    const IrU32 rhs(ir.Emit(extractOpcode, IrType::U32, {&rhsSource.Value(), &ir.Constant(0u), &ir.Constant(24u)}));
+    IrU32 result(ir.IMul(lhs.Value(), rhs.Value()));
+    if (addend) {
+        result = IrU32(ir.IAdd(result.Value(), readU32(sourceAt(inst, 2u)).Value()));
+    }
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vMadU64U32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const std::array<IrU32, 2> add = extractU64(readU64(sourceAt(inst, 2u)));
+    const IrU32 mulLow(ir.IMul(lhs.Value(), rhs.Value()));
+    const IrU32 mulHigh(ir.Emit(IrOpcode::UMulHi, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    const IrU32 low(ir.IAdd(mulLow.Value(), add[0].Value()));
+    const IrU1 carryLow(ir.ULessThan(low.Value(), mulLow.Value()));
+    const IrU32 high0(ir.IAdd(mulHigh.Value(), add[1].Value()));
+    const IrU1 carry0(ir.ULessThan(high0.Value(), mulHigh.Value()));
+    const IrU32 carryLowU32(ir.Select(carryLow.Value(), ir.Constant(1u), ir.Constant(0u)));
+    const IrU32 high(ir.IAdd(high0.Value(), carryLowU32.Value()));
+    const IrU1 carry1(ir.ULessThan(high.Value(), high0.Value()));
+    const IrU64 result(ir.ConstructU64(low.Value(), high.Value()));
+    writeOperand(inst.destination, &result.Value());
+    if (inst.destination2.kind != RdnaOperandKind::Null && inst.destination2.kind != RdnaOperandKind::Unknown) {
+        writeMask(inst.destination2, IrU1(ir.LogicalOr(carry0.Value(), carry1.Value())));
+    }
+    return true;
+}
+
+bool TranslationContext::vSadU32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 lo(ir.Emit(IrOpcode::UMin32, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    const IrU32 hi(ir.Emit(IrOpcode::UMax32, IrType::U32, {&lhs.Value(), &rhs.Value()}));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.IAdd(ir.ISub(hi.Value(), lo.Value()), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vAdd3U32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.IAdd(ir.IAdd(lhs.Value(), rhs.Value()), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sBitsetB32(const RdnaInstruction& inst, bool set) {
+    const IrU32 offset(ir.BitwiseAnd(readU32(sourceAt(inst, 0u)).Value(), ir.Constant(31u)));
+    const IrU32 bit(ir.ShiftLeftLogical(ir.Constant(1u), offset.Value()));
+    const IrU32 old = readU32(inst.destination);
+    const IrU32 result(set ? ir.BitwiseOr(old.Value(), bit.Value()) : ir.BitwiseAnd(old.Value(), ir.BitwiseNot(bit.Value())));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sBitsetB64(const RdnaInstruction& inst, bool set) {
+    const IrU32 offset(ir.BitwiseAnd(readU32(sourceAt(inst, 0u)).Value(), ir.Constant(63u)));
+    const IrU32 wordBit(ir.BitwiseAnd(offset.Value(), ir.Constant(31u)));
+    const IrU32 bit(ir.ShiftLeftLogical(ir.Constant(1u), wordBit.Value()));
+    const std::array<IrU32, 2> old = readU32Pair(inst.destination);
+    const IrU32 lowValue(set ? ir.BitwiseOr(old[0].Value(), bit.Value()) : ir.BitwiseAnd(old[0].Value(), ir.BitwiseNot(bit.Value())));
+    const IrU32 highValue(set ? ir.BitwiseOr(old[1].Value(), bit.Value()) : ir.BitwiseAnd(old[1].Value(), ir.BitwiseNot(bit.Value())));
+    const IrU1 high(ir.Emit(IrOpcode::UGreaterThanEqual32, IrType::U1, {&offset.Value(), &ir.Constant(32u)}));
+    const std::array<IrU32, 2> result{IrU32(ir.Select(high.Value(), old[0].Value(), lowValue.Value())), IrU32(ir.Select(high.Value(), highValue.Value(), old[1].Value()))};
+    writeU32Pair(inst.destination, result);
+    return true;
+}
+
+bool TranslationContext::vBcntU32B32(const RdnaInstruction& inst) {
+    const IrU32 source = readU32(sourceAt(inst, 0u));
+    const IrU32 count(ir.Emit(IrOpcode::BitCount32, IrType::U32, {&source.Value()}));
+    const IrU32 addend = readU32(sourceAt(inst, 1u));
+    const IrU32 result(ir.IAdd(count.Value(), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vMbcntU32B32(const RdnaInstruction& inst, bool low) {
+    const IrU32 lane(ir.Emit(IrOpcode::LaneId, IrType::U32, {}));
+    const IrU32 local(ir.BitwiseAnd(lane.Value(), ir.Constant(31u)));
+    const IrU32 shifted(ir.ShiftLeftLogical(ir.Constant(1u), local.Value()));
+    const IrU32 below(ir.ISub(shifted.Value(), ir.Constant(1u)));
+    const IrU1 highLane(ir.Emit(IrOpcode::UGreaterThanEqual32, IrType::U1, {&lane.Value(), &ir.Constant(32u)}));
+    const IrU32 threadMask(low ? ir.Select(highLane.Value(), ir.Constant(0xffffffffu), below.Value()) : ir.Select(highLane.Value(), below.Value(), ir.Constant(0u)));
+    const IrU32 source = readU32(sourceAt(inst, 0u));
+    const IrU32 active(ir.BitwiseAnd(source.Value(), threadMask.Value()));
+    const IrU32 count(ir.Emit(IrOpcode::BitCount32, IrType::U32, {&active.Value()}));
+    const IrU32 addend = readU32(sourceAt(inst, 1u));
+    const IrU32 result(ir.IAdd(count.Value(), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sBitreplicateB64B32(const RdnaInstruction& inst) {
+    const auto replicate = [&](IrU32 value) {
+        IrU32 bits(ir.BitwiseOr(value.Value(), ir.ShiftLeftLogical(value.Value(), ir.Constant(8u))));
+        bits = IrU32(ir.BitwiseAnd(bits.Value(), ir.Constant(0x00ff00ffu)));
+        bits = IrU32(ir.BitwiseOr(bits.Value(), ir.ShiftLeftLogical(bits.Value(), ir.Constant(4u))));
+        bits = IrU32(ir.BitwiseAnd(bits.Value(), ir.Constant(0x0f0f0f0fu)));
+        bits = IrU32(ir.BitwiseOr(bits.Value(), ir.ShiftLeftLogical(bits.Value(), ir.Constant(2u))));
+        bits = IrU32(ir.BitwiseAnd(bits.Value(), ir.Constant(0x33333333u)));
+        bits = IrU32(ir.BitwiseOr(bits.Value(), ir.ShiftLeftLogical(bits.Value(), ir.Constant(1u))));
+        bits = IrU32(ir.BitwiseAnd(bits.Value(), ir.Constant(0x55555555u)));
+        return IrU32(ir.BitwiseOr(bits.Value(), ir.ShiftLeftLogical(bits.Value(), ir.Constant(1u))));
+    };
+    const IrU32 source = readU32(sourceAt(inst, 0u));
+    const IrU32 low(ir.BitwiseAnd(source.Value(), ir.Constant(0xffffu)));
+    const IrU32 high(ir.ShiftRightLogical(source.Value(), ir.Constant(16u)));
+    const IrU32 lowReplicated = replicate(low);
+    const IrU32 highReplicated = replicate(high);
+    const IrU64 result(ir.ConstructU64(lowReplicated.Value(), highReplicated.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sQuadmaskB64(const RdnaInstruction& inst) {
+    const auto compact = [&](IrU32 value) {
+        IrU32 bits(ir.BitwiseOr(value.Value(), ir.ShiftRightLogical(value.Value(), ir.Constant(1u))));
+        bits = IrU32(ir.BitwiseOr(bits.Value(), ir.ShiftRightLogical(bits.Value(), ir.Constant(2u))));
+        bits = IrU32(ir.BitwiseAnd(bits.Value(), ir.Constant(0x11111111u)));
+        bits = IrU32(ir.BitwiseAnd(ir.BitwiseOr(bits.Value(), ir.ShiftRightLogical(bits.Value(), ir.Constant(3u))), ir.Constant(0x03030303u)));
+        bits = IrU32(ir.BitwiseAnd(ir.BitwiseOr(bits.Value(), ir.ShiftRightLogical(bits.Value(), ir.Constant(6u))), ir.Constant(0x000f000fu)));
+        return IrU32(ir.BitwiseAnd(ir.BitwiseOr(bits.Value(), ir.ShiftRightLogical(bits.Value(), ir.Constant(12u))), ir.Constant(0xffu)));
+    };
+    const std::array<IrU32, 2> source = readU32Pair(sourceAt(inst, 0u));
+    const IrU32 lowCompact = compact(source[0]);
+    const IrU32 highCompact = compact(source[1]);
+    const IrU32 quads(ir.BitwiseOr(lowCompact.Value(), ir.ShiftLeftLogical(highCompact.Value(), ir.Constant(8u))));
+    const IrU64 result(ir.ConstructU64(quads.Value(), ir.Constant(0u)));
+    writeOperand(inst.destination, &result.Value());
+    ir.SetScc(ir.Emit(IrOpcode::INotEqual64, IrType::U1, {&result.Value(), &ir.ConstantU64(0)}));
+    return true;
+}
+
+bool TranslationContext::bfmB32(const RdnaInstruction& inst) {
+    const IrU32 count(ir.BitwiseAnd(readU32(sourceAt(inst, 0u)).Value(), ir.Constant(31u)));
+    const IrU32 offset(ir.BitwiseAnd(readU32(sourceAt(inst, 1u)).Value(), ir.Constant(31u)));
+    const IrU32 result(ir.Emit(IrOpcode::BitFieldInsert, IrType::U32, {&ir.Constant(0u), &ir.Constant(0xffffffffu), &offset.Value(), &count.Value()}));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+IrU32 TranslationContext::rightMask32(IrU32 count) {
+    return IrU32(ir.Emit(IrOpcode::BitFieldInsert, IrType::U32, {&ir.Constant(0u), &ir.Constant(0xffffffffu), &ir.Constant(0u), &count.Value()}));
+}
+
+IrU64 TranslationContext::rightMask64(IrU32 count) {
+    const IrU1 below32(ir.ULessThan(count.Value(), ir.Constant(32u)));
+    const IrU1 above32(ir.UGreaterThan(count.Value(), ir.Constant(32u)));
+    const IrU32 lowCount(ir.Select(below32.Value(), count.Value(), ir.Constant(32u)));
+    const IrU32 highCount(ir.Select(above32.Value(), ir.ISub(count.Value(), ir.Constant(32u)), ir.Constant(0u)));
+    const IrU32 low = rightMask32(lowCount);
+    const IrU32 high = rightMask32(highCount);
+    return IrU64(ir.ConstructU64(low.Value(), high.Value()));
+}
+
+bool TranslationContext::sBfmB64(const RdnaInstruction& inst) {
+    const IrU32 count(ir.BitwiseAnd(readU32(sourceAt(inst, 0u)).Value(), ir.Constant(63u)));
+    const IrU32 offset(ir.BitwiseAnd(readU32(sourceAt(inst, 1u)).Value(), ir.Constant(63u)));
+    const IrU64 mask = rightMask64(count);
+    const IrU64 result(ir.Emit(IrOpcode::ShiftLeftLogical64, IrType::U64, {&mask.Value(), &offset.Value()}));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sBfeU32(const RdnaInstruction& inst, bool sign) {
+    const IrU32 source = readU32(sourceAt(inst, 0u));
+    const IrU32 field = readU32(sourceAt(inst, 1u));
+    const IrU32 offset(ir.Emit(IrOpcode::BitFieldUExtract, IrType::U32, {&field.Value(), &ir.Constant(0u), &ir.Constant(5u)}));
+    const IrU32 rawCount(ir.Emit(IrOpcode::BitFieldUExtract, IrType::U32, {&field.Value(), &ir.Constant(16u), &ir.Constant(7u)}));
+    const IrU32 available(ir.ISub(ir.Constant(32u), offset.Value()));
+    const IrU32 count(ir.Emit(IrOpcode::UMin32, IrType::U32, {&rawCount.Value(), &available.Value()}));
+    const IrOpcode opcode = sign ? IrOpcode::BitFieldSExtract : IrOpcode::BitFieldUExtract;
+    const IrU32 result(ir.Emit(opcode, IrType::U32, {&source.Value(), &offset.Value(), &count.Value()}));
+    writeOperand(inst.destination, &result.Value());
+    ir.SetScc(ir.INotEqual(result.Value(), ir.Constant(0u)));
+    return true;
+}
+
+bool TranslationContext::sBfeU64(const RdnaInstruction& inst) {
+    const IrU64 source = readU64(sourceAt(inst, 0u));
+    const IrU32 field = readU32(sourceAt(inst, 1u));
+    const IrU32 offset(ir.Emit(IrOpcode::BitFieldUExtract, IrType::U32, {&field.Value(), &ir.Constant(0u), &ir.Constant(6u)}));
+    const IrU32 rawCount(ir.Emit(IrOpcode::BitFieldUExtract, IrType::U32, {&field.Value(), &ir.Constant(16u), &ir.Constant(7u)}));
+    const IrU32 available(ir.ISub(ir.Constant(64u), offset.Value()));
+    const IrU32 count(ir.Emit(IrOpcode::UMin32, IrType::U32, {&rawCount.Value(), &available.Value()}));
+    const IrU64 shifted(ir.Emit(IrOpcode::ShiftRightLogical64, IrType::U64, {&source.Value(), &offset.Value()}));
+    const IrU64 mask = rightMask64(count);
+    const IrU64 result(ir.Emit(IrOpcode::BitwiseAnd64, IrType::U64, {&shifted.Value(), &mask.Value()}));
+    writeOperand(inst.destination, &result.Value());
+    ir.SetScc(ir.Emit(IrOpcode::INotEqual64, IrType::U1, {&result.Value(), &ir.ConstantU64(0)}));
+    return true;
+}
+
+bool TranslationContext::vBfeU32(const RdnaInstruction& inst, bool sign) {
+    const IrU32 source = readU32(sourceAt(inst, 0u));
+    const IrU32 offset(ir.BitwiseAnd(readU32(sourceAt(inst, 1u)).Value(), ir.Constant(31u)));
+    const IrU32 rawCount(ir.BitwiseAnd(readU32(sourceAt(inst, 2u)).Value(), ir.Constant(31u)));
+    const IrU32 available(ir.ISub(ir.Constant(32u), offset.Value()));
+    const IrU32 count(ir.Emit(IrOpcode::UMin32, IrType::U32, {&rawCount.Value(), &available.Value()}));
+    const IrOpcode opcode = sign ? IrOpcode::BitFieldSExtract : IrOpcode::BitFieldUExtract;
+    const IrU32 result(ir.Emit(opcode, IrType::U32, {&source.Value(), &offset.Value(), &count.Value()}));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vBfiB32(const RdnaInstruction& inst) {
+    const IrU32 bits = readU32(sourceAt(inst, 0u));
+    const IrU32 insert = readU32(sourceAt(inst, 1u));
+    const IrU32 base = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.BitwiseOr(ir.BitwiseAnd(bits.Value(), insert.Value()), ir.BitwiseAnd(ir.BitwiseNot(bits.Value()), base.Value())));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::sBitcmpB32(const RdnaInstruction& inst, bool expected) {
+    const IrU32 value = readU32(sourceAt(inst, 0u));
+    const IrU32 offset(ir.BitwiseAnd(readU32(sourceAt(inst, 1u)).Value(), ir.Constant(31u)));
+    const IrU32 bit(ir.Emit(IrOpcode::BitFieldUExtract, IrType::U32, {&value.Value(), &offset.Value(), &ir.Constant(1u)}));
+    writeCompareResult(inst.destination, IrU1(ir.IEqual(bit.Value(), ir.Constant(expected ? 1u : 0u))));
+    return true;
+}
+
+bool TranslationContext::vAlignbitB32(const RdnaInstruction& inst) {
+    const IrU32 hi = readU32(sourceAt(inst, 0u));
+    const IrU32 lo = readU32(sourceAt(inst, 1u));
+    const IrU32 shift(ir.BitwiseAnd(readU32(sourceAt(inst, 2u)).Value(), ir.Constant(31u)));
+    const IrU32 loPart(ir.ShiftRightLogical(lo.Value(), shift.Value()));
+    const IrU32 inverse(ir.BitwiseAnd(ir.ISub(ir.Constant(32u), shift.Value()), ir.Constant(31u)));
+    const IrU32 hiPartRaw(ir.ShiftLeftLogical(hi.Value(), inverse.Value()));
+    const IrU1 shiftNonZero(ir.INotEqual(shift.Value(), ir.Constant(0u)));
+    const IrU32 hiPart(ir.Select(shiftNonZero.Value(), hiPartRaw.Value(), ir.Constant(0u)));
+    const IrU32 result(ir.BitwiseOr(loPart.Value(), hiPart.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vAlignbyteB32(const RdnaInstruction& inst) {
+    const IrU32 hi = readU32(sourceAt(inst, 0u));
+    const IrU32 lo = readU32(sourceAt(inst, 1u));
+    const IrU32 byteOffset(ir.BitwiseAnd(readU32(sourceAt(inst, 2u)).Value(), ir.Constant(31u)));
+    const IrU32 bitOffset(ir.ShiftLeftLogical(byteOffset.Value(), ir.Constant(3u)));
+    const IrU64 concatenated(ir.ConstructU64(lo.Value(), hi.Value()));
+    const IrU32 maskedBitOffset(ir.BitwiseAnd(bitOffset.Value(), ir.Constant(63u)));
+    const IrU64 shifted(ir.Emit(IrOpcode::ShiftRightLogical64, IrType::U64, {&concatenated.Value(), &maskedBitOffset.Value()}));
+    const IrU1 inRange(ir.ULessThan(byteOffset.Value(), ir.Constant(8u)));
+    const std::array<IrU32, 2> extracted = extractU64(shifted);
+    const IrU32 result(ir.Select(inRange.Value(), extracted[0].Value(), ir.Constant(0u)));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vLshlAddU32(const RdnaInstruction& inst) {
+    const IrU32 shift(ir.BitwiseAnd(readU32(sourceAt(inst, 1u)).Value(), ir.Constant(31u)));
+    const IrU32 shifted(ir.ShiftLeftLogical(readU32(sourceAt(inst, 0u)).Value(), shift.Value()));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.IAdd(shifted.Value(), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vAddLshlU32(const RdnaInstruction& inst) {
+    const IrU32 shift(ir.BitwiseAnd(readU32(sourceAt(inst, 2u)).Value(), ir.Constant(31u)));
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 sum(ir.IAdd(lhs.Value(), rhs.Value()));
+    const IrU32 result(ir.ShiftLeftLogical(sum.Value(), shift.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vXadU32(const RdnaInstruction& inst) {
+    const IrU32 lhs = readU32(sourceAt(inst, 0u));
+    const IrU32 rhs = readU32(sourceAt(inst, 1u));
+    const IrU32 xorValue(ir.BitwiseXor(lhs.Value(), rhs.Value()));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.IAdd(xorValue.Value(), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vLshlOrB32(const RdnaInstruction& inst) {
+    const IrU32 shift(ir.BitwiseAnd(readU32(sourceAt(inst, 1u)).Value(), ir.Constant(31u)));
+    const IrU32 shifted(ir.ShiftLeftLogical(readU32(sourceAt(inst, 0u)).Value(), shift.Value()));
+    const IrU32 addend = readU32(sourceAt(inst, 2u));
+    const IrU32 result(ir.BitwiseOr(shifted.Value(), addend.Value()));
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+bool TranslationContext::vCndmaskB32(const RdnaInstruction& inst) {
+    RdnaOperand defaultMask{};
+    defaultMask.kind = RdnaOperandKind::VccLo;
+    const RdnaOperand& maskOperand = inst.sourceCount >= 3u ? sourceAt(inst, 2u) : defaultMask;
+    const IrU1 condition = readMask(maskOperand);
+    const RdnaOperand& falseOperand = sourceAt(inst, 0u);
+    const RdnaOperand& trueOperand = sourceAt(inst, 1u);
+    IrValue* result = nullptr;
+    if (falseOperand.negate || falseOperand.absolute || trueOperand.negate || trueOperand.absolute) {
+        IrValue* falseValue = readOperand(falseOperand, IrType::F32);
+        IrValue* trueValue = readOperand(trueOperand, IrType::F32);
+        result = &ir.Emit(IrOpcode::SelectF32, IrType::F32, {&condition.Value(), trueValue, falseValue});
+    } else {
+        const IrU32 falseValue = readU32(falseOperand);
+        const IrU32 trueValue = readU32(trueOperand);
+        result = &ir.Select(condition.Value(), trueValue.Value(), falseValue.Value());
+    }
+    writeOperand(inst.destination, result);
+    return true;
+}
+
+bool TranslationContext::packB16(const RdnaInstruction& inst, bool high0, bool high1) {
+    const IrU32 source0 = readU32(sourceAt(inst, 0u));
+    const IrU32 source1 = readU32(sourceAt(inst, 1u));
+    const IrU32 lo(high0 ? ir.ShiftRightLogical(source0.Value(), ir.Constant(16u)) : source0.Value());
+    const IrU32 hi(high1 ? ir.ShiftRightLogical(source1.Value(), ir.Constant(16u)) : source1.Value());
+    const IrU32 result = packU16Lanes(lo, hi);
+    writeOperand(inst.destination, &result.Value());
+    return true;
+}
+
+void TranslateIntegerInstruction(TranslationContext& context, const RdnaInstruction& instruction) {
+    throw std::runtime_error("TranslateIntegerInstruction not implemented");
+}
+
+}
