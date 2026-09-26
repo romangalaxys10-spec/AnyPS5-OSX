@@ -34,8 +34,10 @@ if(WIN32)
     target_sources(libc PRIVATE src/MemoryTrackingWindows.cpp src/MemoryBackingWindows.cpp)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
     target_sources(libc PRIVATE src/MemoryTrackingLinux.cpp src/MemoryBackingLinux.cpp)
+elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|arm64)$")
+    target_sources(libc PRIVATE src/MemoryTrackingDarwin.cpp src/MemoryBackingDarwin.cpp)
 else()
-    message(FATAL_ERROR "Guest GPU memory tracking requires Windows or x86-64 Linux")
+    message(FATAL_ERROR "Guest GPU memory tracking requires Windows, x86-64 Linux or macOS")
 endif()
 
 target_include_directories(libc PRIVATE

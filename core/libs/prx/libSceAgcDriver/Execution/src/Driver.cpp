@@ -601,7 +601,7 @@ private:
                     {
                         std::lock_guard gpuLock(gpuMutex);
                         const GuestMemory::MemoryAccessScope memoryScope(device.get(), [](void* context, std::uint64_t address, std::size_t bytes, bool writable) {
-                            if (context) static_cast<VulkanDevice*>(context)->ResolveMemory(address, bytes, writable);
+                            if (context) static_cast<GpuDevice*>(context)->ResolveMemory(address, bytes, writable);
                         });
                         direct = Pm4::ResolveDispatch(packet, queue);
                     }
@@ -611,7 +611,7 @@ private:
                 } else if (opcode != 0x42 && opcode != 0x46 && opcode != 0x58) {
                     std::lock_guard gpuLock(gpuMutex);
                     const GuestMemory::MemoryAccessScope memoryScope(device.get(), [](void* context, std::uint64_t address, std::size_t bytes, bool writable) {
-                        if (context) static_cast<VulkanDevice*>(context)->ResolveMemory(address, bytes, writable);
+                        if (context) static_cast<GpuDevice*>(context)->ResolveMemory(address, bytes, writable);
                     });
                     Pm4::Execute(packet, queue);
                     timing.Mark("pm4_execute");
