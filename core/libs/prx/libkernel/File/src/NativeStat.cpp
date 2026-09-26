@@ -54,18 +54,30 @@ void FillFileStat(const std::filesystem::path& nativePath, FileStat* sb) {
     sb->st_rdev = static_cast<std::uint32_t>(st.st_rdev);
     sb->st_blksize = static_cast<std::uint32_t>(st.st_blksize);
     sb->st_blocks = static_cast<std::int64_t>(st.st_blocks);
+#if defined(__APPLE__)
+    sb->st_atim.tv_sec = static_cast<std::int64_t>(st.st_atimespec.tv_sec);
+    sb->st_atim.tv_nsec = static_cast<std::int64_t>(st.st_atimespec.tv_nsec);
+    sb->st_mtim.tv_sec = static_cast<std::int64_t>(st.st_mtimespec.tv_sec);
+    sb->st_mtim.tv_nsec = static_cast<std::int64_t>(st.st_mtimespec.tv_nsec);
+    sb->st_ctim.tv_sec = static_cast<std::int64_t>(st.st_ctimespec.tv_sec);
+    sb->st_ctim.tv_nsec = static_cast<std::int64_t>(st.st_ctimespec.tv_nsec);
+    sb->st_birthtim.tv_sec = static_cast<std::int64_t>(st.st_birthtimespec.tv_sec);
+    sb->st_birthtim.tv_nsec = static_cast<std::int64_t>(st.st_birthtimespec.tv_nsec);
+#elif defined(__linux__)
     sb->st_atim.tv_sec = static_cast<std::int64_t>(st.st_atim.tv_sec);
     sb->st_atim.tv_nsec = static_cast<std::int64_t>(st.st_atim.tv_nsec);
     sb->st_mtim.tv_sec = static_cast<std::int64_t>(st.st_mtim.tv_sec);
     sb->st_mtim.tv_nsec = static_cast<std::int64_t>(st.st_mtim.tv_nsec);
     sb->st_ctim.tv_sec = static_cast<std::int64_t>(st.st_ctim.tv_sec);
     sb->st_ctim.tv_nsec = static_cast<std::int64_t>(st.st_ctim.tv_nsec);
-#if defined(__APPLE__)
-    sb->st_birthtim.tv_sec = static_cast<std::int64_t>(st.st_birthtimespec.tv_sec);
-    sb->st_birthtim.tv_nsec = static_cast<std::int64_t>(st.st_birthtimespec.tv_nsec);
-#elif defined(__linux__)
     sb->st_birthtim = sb->st_ctim;
 #else
+    sb->st_atim.tv_sec = static_cast<std::int64_t>(st.st_atim.tv_sec);
+    sb->st_atim.tv_nsec = static_cast<std::int64_t>(st.st_atim.tv_nsec);
+    sb->st_mtim.tv_sec = static_cast<std::int64_t>(st.st_mtim.tv_sec);
+    sb->st_mtim.tv_nsec = static_cast<std::int64_t>(st.st_mtim.tv_nsec);
+    sb->st_ctim.tv_sec = static_cast<std::int64_t>(st.st_ctim.tv_sec);
+    sb->st_ctim.tv_nsec = static_cast<std::int64_t>(st.st_ctim.tv_nsec);
     sb->st_birthtim.tv_sec = static_cast<std::int64_t>(st.st_birthtim.tv_sec);
     sb->st_birthtim.tv_nsec = static_cast<std::int64_t>(st.st_birthtim.tv_nsec);
 #endif
