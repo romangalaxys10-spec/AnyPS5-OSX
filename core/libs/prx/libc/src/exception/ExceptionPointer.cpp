@@ -2,22 +2,19 @@
 #include <stdexcept>
 
 #if defined(__APPLE__)
-namespace LibcException {
-struct Header;
-Header* FromObject(void* object) noexcept;
-}
+#include "prx/libc/include/exceptions/Runtime.hpp"
 #endif
 
 extern "C" {
 #if defined(__APPLE__)
 void APS5_VABI _ZNSt15__exception_ptr13exception_ptr9_M_addrefEv_nid_postfix(std::exception_ptr* self) noexcept {
-    __cxa_increment_exception_refcount(*reinterpret_cast<void**>(self));
+    __cxxabiv1::__cxa_increment_exception_refcount(*reinterpret_cast<void**>(self));
 }
 
 void APS5_VABI _ZNSt15__exception_ptr13exception_ptr10_M_releaseEv_nid_postfix(std::exception_ptr* self) noexcept {
     void* object = *reinterpret_cast<void**>(self);
     if (object) {
-        __cxa_decrement_exception_refcount(object);
+        __cxxabiv1::__cxa_decrement_exception_refcount(object);
         *reinterpret_cast<void**>(self) = nullptr;
     }
 }
@@ -28,7 +25,7 @@ void* APS5_VABI _ZNKSt15__exception_ptr13exception_ptr6_M_getEv_nid_postfix(cons
 
 void APS5_VABI _ZNSt15__exception_ptr13exception_ptrC1EPv_nid_postfix(std::exception_ptr* self, void* exception) noexcept {
     *reinterpret_cast<void**>(self) = exception;
-    if (exception) __cxa_increment_exception_refcount(exception);
+    if (exception) __cxxabiv1::__cxa_increment_exception_refcount(exception);
 }
 
 void APS5_VABI _ZNSt15__exception_ptr13exception_ptrC2EPv_nid_postfix(std::exception_ptr* self, void* exception) noexcept {
@@ -44,7 +41,7 @@ std::exception_ptr APS5_VABI _ZSt17current_exceptionv_nid_postfix() noexcept {
 }
 
 [[noreturn]] void APS5_VABI _ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE_nid_postfix(std::exception_ptr exception) {
-    __cxa_rethrow_primary_exception(*reinterpret_cast<void**>(&exception));
+    __cxxabiv1::__cxa_rethrow_primary_exception(*reinterpret_cast<void**>(&exception));
     LibcException::Terminate();
 }
 #else
