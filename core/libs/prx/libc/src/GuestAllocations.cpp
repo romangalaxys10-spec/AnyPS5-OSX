@@ -234,10 +234,10 @@ std::map<std::uint64_t, std::shared_ptr<const Range>> replaceRange(const void* p
         const auto insert = [&](std::uint64_t first, std::uint64_t last, bool canRead, bool canWrite) {
             if (first < last) replacement.emplace(first, std::make_shared<const Range>(Range{first, static_cast<std::size_t>(last - first), canRead, canWrite, range.allocationAddress, range.allocationBytes, range.releasable}));
         };
-        insert(base, std::max(base, address), range.readable, range.writable);
-        if (!remove) insert(std::max(base, address), std::min(finish, end), readable, writable);
-        insert(std::min(finish, end), finish, range.readable, range.writable);
-        cursor = std::min(finish, end);
+        insert(base, std::max<std::uint64_t>(base, address), range.readable, range.writable);
+        if (!remove) insert(std::max<std::uint64_t>(base, address), std::min<std::uint64_t>(finish, end), readable, writable);
+        insert(std::min<std::uint64_t>(finish, end), finish, range.readable, range.writable);
+        cursor = std::min<std::uint64_t>(finish, end);
     }
     require(cursor == end, "guest protection or unmap range is not registered");
     return replacement;

@@ -49,7 +49,7 @@ jobs:
       - name: Configure (x86_64, Release, AUTO GPU backend)
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_POLICY_VERSION_MINIMUM="3.5" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
             -DANYPS5_GPU_BACKEND=AUTO \
@@ -89,7 +89,7 @@ jobs:
       - name: Arm64 variant (relinker only)
         run: |
           cmake -S . -B build-arm64 -G Ninja \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_POLICY_VERSION_MINIMUM="3.5" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DANYPS5_GPU_BACKEND=AUTO \
@@ -234,7 +234,7 @@ jobs:
 
       - name: Configure (Release, AUTO GPU backend)
         shell: pwsh
-        run: cmake -S . -B build -G Ninja -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DANYPS5_GPU_BACKEND=AUTO -DBUILD_TESTING=ON
+        run: cmake -S . -B build -G Ninja "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -DCMAKE_BUILD_TYPE=Release -DANYPS5_GPU_BACKEND=AUTO -DBUILD_TESTING=ON
 
       - name: Build (relinker, libs, anyps5-launcher)
         shell: pwsh
