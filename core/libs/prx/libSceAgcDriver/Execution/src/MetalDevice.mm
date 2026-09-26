@@ -412,10 +412,9 @@ void MetalDevice::present(std::uint32_t width, std::uint32_t height, bool opaque
                 descriptor.colorTextureFormat = source.pixelFormat;
                 descriptor.outputTextureFormat = state->layer.pixelFormat;
                 descriptor.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeLinear;
-                NSError* error = nil;
-                entry->scaler = [descriptor newSpatialScalerWithDevice:state->device error:&error];
+                entry->scaler = [descriptor newSpatialScalerWithDevice:state->device];
                 [descriptor release];
-                require(entry->scaler != nil, "MetalFX spatial scaler creation failed: " + NSStringToStdString(error.localizedDescription));
+                require(entry->scaler != nil, "MetalFX spatial scaler creation failed");
                 entry->targetWidth = targetWidth;
                 entry->targetHeight = targetHeight;
             }
@@ -489,7 +488,10 @@ void MetalDevice::Dispatch(const ShaderRecompiler::RecompileResult& shader, std:
         require(!shader.spirv.empty(), "Dispatch requires compiled SPIR-V");
         std::vector<std::uint32_t> words(shader.spirv.begin(), shader.spirv.end());
         spirv_cross::CompilerMSL compiler(std::move(words));
-        compiler.set_msl_version(2, 3, 0);
+        spirv_cross::CompilerMSL::Options mslOptions;
+        mslOptions.msl_version = static_cast<std::uint32_t>(2 << 16 | 3 << 8);
+        mslOptions.enable_point_size_builtin = false;
+        compiler.set_msl_options(mslOptions);
         std::string msl;
         try {
             msl = compiler.compile();
