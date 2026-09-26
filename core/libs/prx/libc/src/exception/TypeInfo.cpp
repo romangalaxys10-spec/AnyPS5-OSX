@@ -28,15 +28,25 @@ bool APS5_VABI UpcastTypeInfo(const std::type_info* self, const ClassTypeInfo* b
     return true;
 }
 
-bool APS5_VABI UpcastTypeInfoResult(const ClassTypeInfo*, const ClassTypeInfo*, const void*, ClassTypeInfo::__upcast_result&) {
+#if defined(__APPLE__)
+struct __UpcastResultView {};
+enum class __SubKindView : unsigned char {};
+struct __DyncastResultView {};
+#else
+using __UpcastResultView = ClassTypeInfo::__upcast_result;
+using __SubKindView = ClassTypeInfo::__sub_kind;
+using __DyncastResultView = ClassTypeInfo::__dyncast_result;
+#endif
+
+bool APS5_VABI UpcastTypeInfoResult(const ClassTypeInfo*, const ClassTypeInfo*, const void*, __UpcastResultView&) {
     throw std::runtime_error("RTTI __upcast_result is not supported");
 }
 
-bool APS5_VABI DynamicCastTypeInfo(const ClassTypeInfo*, std::ptrdiff_t, ClassTypeInfo::__sub_kind, const ClassTypeInfo*, const void*, const ClassTypeInfo*, const void*, ClassTypeInfo::__dyncast_result&) {
+bool APS5_VABI DynamicCastTypeInfo(const ClassTypeInfo*, std::ptrdiff_t, __SubKindView, const ClassTypeInfo*, const void*, const ClassTypeInfo*, const void*, __DyncastResultView&) {
     throw std::runtime_error("RTTI __dyncast_result is not supported");
 }
 
-ClassTypeInfo::__sub_kind APS5_VABI FindPublicTypeInfo(const ClassTypeInfo*, std::ptrdiff_t, const void*, const ClassTypeInfo*, const void*) {
+__SubKindView APS5_VABI FindPublicTypeInfo(const ClassTypeInfo*, std::ptrdiff_t, const void*, const ClassTypeInfo*, const void*) {
     throw std::runtime_error("RTTI __do_find_public_src is not supported");
 }
 
@@ -56,7 +66,9 @@ struct TypeInfoVtable {
     decltype(&FindPublicTypeInfo) findPublic = FindPublicTypeInfo;
 };
 
+#if !defined(__APPLE__)
 static_assert(offsetof(TypeInfoVtable, destroy) == 2 * sizeof(void*));
+#endif
 static_assert(sizeof(TypeInfoVtable) == 11 * sizeof(void*));
 
 }
