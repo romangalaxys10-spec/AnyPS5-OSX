@@ -405,14 +405,13 @@ void MetalDevice::present(std::uint32_t width, std::uint32_t height, bool opaque
             if (entry->scaler == nil || entry->targetWidth != targetWidth || entry->targetHeight != targetHeight) {
                 [entry->scaler release];
                 MTLFXSpatialScalerDescriptor* descriptor = [MTLFXSpatialScalerDescriptor new];
-                descriptor.inputContentWidth = display->width;
-                descriptor.inputContentHeight = display->height;
-                descriptor.outputContentWidth = targetWidth;
-                descriptor.outputContentHeight = targetHeight;
+                descriptor.inputWidth = display->width;
+                descriptor.inputHeight = display->height;
+                descriptor.outputWidth = targetWidth;
+                descriptor.outputHeight = targetHeight;
                 descriptor.colorTextureFormat = source.pixelFormat;
                 descriptor.outputTextureFormat = state->layer.pixelFormat;
-                descriptor.quality = MTLFXSpatialScalerQualityDefault;
-                descriptor.isLDRContent = YES;
+                descriptor.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeLinear;
                 NSError* error = nil;
                 entry->scaler = [descriptor newSpatialScalerWithDevice:state->device error:&error];
                 [descriptor release];
