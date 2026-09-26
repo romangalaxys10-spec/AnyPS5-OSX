@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <system_error>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <sys/mman.h>
 #else
 #include <windows.h>
