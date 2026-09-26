@@ -10,8 +10,8 @@
 #import <SDL_syswm.h>
 
 #include <spirv/unified1/spirv.hpp>
-#include <spirv_cross/spirv_cross.hpp>
-#include <spirv_cross/spirv_msl.hpp>
+#include <spirv_cross.hpp>
+#include <spirv_msl.hpp>
 
 #include "prx/libSceAgcDriver/Execution/include/AspectFit.hpp"
 #include "prx/libSceAgcDriver/Execution/include/Presentation.hpp"

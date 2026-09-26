@@ -129,7 +129,7 @@ target_include_directories(libSceAgcDriver PRIVATE
         ${CMAKE_SOURCE_DIR}/3rdparty/SPIRV-Headers/include
 )
 if(APPLE)
-    target_include_directories(libSceAgcDriver PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/SPIRV-Cross/include)
+    target_include_directories(libSceAgcDriver PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/SPIRV-Cross/include ${CMAKE_SOURCE_DIR}/3rdparty/SPIRV-Cross)
     target_link_libraries(libSceAgcDriver PRIVATE spirv-cross-core spirv-cross-msl)
     target_link_libraries(libSceAgcDriver PRIVATE "-framework Metal" "-framework MetalFX" "-framework Foundation" "-framework QuartzCore")
 endif()
