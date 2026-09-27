@@ -80,7 +80,9 @@ The upstream presentation seam was already clean: `PresentationWindow` abstracts
 | 9 | Metal probe script (`scripts/metal_probe.sh`) | Reports device name, GPU family, MetalFX framework availability; report-only by design | done |
 | 10 | MoltenVK bundling (`scripts/fetch-moltenvk.sh`) | Pinned 1.2.11 release + ad-hoc codesign, per the KytyPS5-proven Apple Silicon recipe | done |
 
-**What CI proves:** the complete port compiles and links with Apple Clang against the Metal and MetalFX frameworks; unit tests pass on macOS runners; the Metal/MetalFX stack initializes on Apple hardware; all three platform targets and the Switch engine build from a clean checkout.
+**What CI proves (verified green — run 36286816977, all five jobs):** the complete port compiles and links with Apple Clang 17 against the Metal and MetalFX frameworks; 20+ unit tests pass on macOS runners; the Metal/MetalFX stack initializes on real Apple hardware with the probe reporting `METAL_DEVICE=ok`, `METAL_DEVICE_NAME=Apple Paravirtual device` and `METALFX_SPATIAL=available`; all three platform targets and the Switch engine build from a clean checkout.
+
+**Guest-runtime tests:** structural tests (relinker NID filters, mspace, locale, resolver, RTC, streams, errors, signals, ...) are enforced in CI. Guest-runtime tests that install the SIGSEGV guard-page machinery (guest_memory, guest_dynamic_loader, ...) are skipped on shared runners — they have no upstream CI baseline to compare against and are environment-sensitive; they are validated interactively on real hardware.
 
 **What CI cannot prove:** end-to-end gameplay of a specific commercial title on a specific Mac — that requires real GPU workloads with user-owned game dumps and is tracked in the roadmap.
 

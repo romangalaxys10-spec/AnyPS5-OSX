@@ -97,21 +97,29 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,/opt/homebrew/lib"
           cmake --build build-arm64 --target relinker --parallel 3
 
+      - name: Collect binaries into staging
+        run: |
+          mkdir -p stage/libs
+          find build -type f \( -name relinker -o -name anyps5-launcher -o -name nid_patcher \) -exec cp {} stage/ \;
+          find build -name "*.prx" -path "*/libs/*" -exec cp {} stage/libs/ \;
+          ls stage stage/libs | head -30
+
       - name: Upload macOS x64 artifacts
         uses: actions/upload-artifact@v4
         with:
           name: osx-edition-macos-x64
           path: |
-            build/relinker
-            build/libs/*.prx
-            build/anyps5-launcher
+            stage/relinker
+            stage/anyps5-launcher
+            stage/nid_patcher
+            stage/libs/*.prx
           if-no-files-found: warn
 
       - name: Upload macOS arm64 relinker artifact
         uses: actions/upload-artifact@v4
         with:
           name: osx-edition-macos-arm64-relinker
-          path: build-arm64/relinker
+          path: build-arm64/core/relinker/relinker
           if-no-files-found: warn
 
   linux:
@@ -154,14 +162,22 @@ jobs:
             -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search|guest_dynamic_loader|guest_udp" > /dev/null 2>&1 || true
           exit ${TEST_EXIT:-0}
 
+      - name: Collect binaries into staging
+        run: |
+          mkdir -p stage/libs
+          find build -type f \( -name relinker -o -name anyps5-launcher -o -name nid_patcher \) -exec cp {} stage/ \;
+          find build -name "*.prx" -path "*/libs/*" -exec cp {} stage/libs/ \;
+          ls stage stage/libs | head -30
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: osx-edition-linux-x64
           path: |
-            build/relinker
-            build/libs/*.prx
-            build/anyps5-launcher
+            stage/relinker
+            stage/anyps5-launcher
+            stage/nid_patcher
+            stage/libs/*.prx
           if-no-files-found: warn
 
   windows:
@@ -240,14 +256,22 @@ jobs:
         shell: pwsh
         run: cmake --build build --target relinker libs anyps5-launcher --parallel 3
 
+      - name: Collect binaries into staging
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path stage/libs | Out-Null
+          Get-ChildItem -Path build -Recurse -Include relinker.exe,anyps5-launcher.exe,nid_patcher.exe | ForEach-Object { Copy-Item $_.FullName stage/ }
+          Get-ChildItem -Path build -Recurse -Include *.prx | Where-Object { $_.FullName -match '\\libs\\' } | ForEach-Object { Copy-Item $_.FullName stage/libs/ }
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: osx-edition-windows-x64
           path: |
-            build/relinker.exe
-            build/libs/*.prx
-            build/anyps5-launcher.exe
+            stage/relinker.exe
+            stage/anyps5-launcher.exe
+            stage/nid_patcher.exe
+            stage/libs/*.prx
           if-no-files-found: warn
 
   switch-engine:
