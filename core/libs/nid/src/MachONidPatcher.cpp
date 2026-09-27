@@ -323,13 +323,14 @@ void RewriteExportTrie(
     const SegmentRef& linkedit,
     const TrieLocation& trie,
     const std::unordered_map<std::string, std::string>& nidMap,
-    std::vector<std::pair<std::string, std::vector<std::uint8_t>>> terminals
+    std::vector<std::pair<std::string, std::vector<std::uint8_t>>> terminals,
+    bool forceRebuild
 ) {
     using namespace Internal;
 
-    if (trie.dataSize == 0u || terminals.empty()) return;
+    if (terminals.empty()) return;
 
-    bool changed = false;
+    bool changed = forceRebuild;
     std::unordered_set<std::string> uniqueNames;
     for (auto& terminal : terminals) {
         const auto mapped = nidMap.find(terminal.first);
@@ -350,7 +351,7 @@ void RewriteExportTrie(
     EmitTrieNode(rebuilt, newBlob);
     VerifyTrie(newBlob, expected);
 
-    if (newBlob.size() <= trie.dataSize) {
+    if (trie.dataSize != 0u && newBlob.size() <= trie.dataSize) {
         std::memcpy(macho.data() + trie.dataOffset, newBlob.data(), newBlob.size());
         std::memset(macho.data() + trie.dataOffset + newBlob.size(), 0u, trie.dataSize - newBlob.size());
         if (trie.exportsTrieCommand) {
@@ -546,18 +547,24 @@ void MachONidPatcher::PatchNids(std::vector<std::uint8_t>& macho, const std::str
         macho.begin() + static_cast<std::ptrdiff_t>(strTabEnd));
 
     std::vector<std::pair<std::string, std::vector<std::uint8_t>>> trieTerminals;
+    bool forceTrieRebuild = trie.dataSize == 0u;
     if (trie.dataSize != 0u) {
         if (static_cast<std::size_t>(trie.dataOffset) + trie.dataSize > macho.size())
             throw std::runtime_error("export trie out of file bounds");
         const std::vector<std::uint8_t> blob(
             macho.begin() + static_cast<std::ptrdiff_t>(trie.dataOffset),
             macho.begin() + static_cast<std::ptrdiff_t>(trie.dataOffset + trie.dataSize));
-        std::unordered_set<std::size_t> visited;
-        const auto root = ParseTrieNode(blob, 0u, visited);
-        std::string prefix;
-        CollectTerminals(root, prefix, trieTerminals);
-        for (const auto& terminal : trieTerminals) {
-            if (terminal.first.empty()) throw std::runtime_error("empty export name in trie");
+        try {
+            std::unordered_set<std::size_t> visited;
+            const auto root = ParseTrieNode(blob, 0u, visited);
+            std::string prefix;
+            CollectTerminals(root, prefix, trieTerminals);
+            for (const auto& terminal : trieTerminals) {
+                if (terminal.first.empty()) throw std::runtime_error("empty export name in trie");
+            }
+        } catch (const std::exception&) {
+            trieTerminals.clear();
+            forceTrieRebuild = true;
         }
     }
 
@@ -584,10 +591,23 @@ void MachONidPatcher::PatchNids(std::vector<std::uint8_t>& macho, const std::str
             exportedNames.push_back(terminal.first);
     }
 
+    if (forceTrieRebuild && trieTerminals.empty()) {
+        for (const auto& ref : externals) {
+            if (!ref.defined) continue;
+            const auto entry = Read<Nlist64>(macho, ref.nlistOffset);
+            std::string name = ref.name;
+            if (name.size() > 1 && name[0] == '_') name = name.substr(1);
+            std::vector<std::uint8_t> terminalData;
+            terminalData.push_back(0x00u);
+            WriteUleb(terminalData, entry.n_value);
+            trieTerminals.emplace_back(std::move(name), std::move(terminalData));
+        }
+    }
+
     const auto nidMap = ResolveNids(exportedNames, libraryName, excludedExports);
 
     RewriteSymbolTable(macho, symtabCommandOffset, linkedit, nidMap, oldStrTab, externals);
-    RewriteExportTrie(macho, linkedit, trie, nidMap, std::move(trieTerminals));
+    RewriteExportTrie(macho, linkedit, trie, nidMap, std::move(trieTerminals), forceTrieRebuild);
     if (dyldInfoCommandOffset != 0u) RewriteBindStreams(macho, dyldInfoCommandOffset, linkedit);
 }
 
