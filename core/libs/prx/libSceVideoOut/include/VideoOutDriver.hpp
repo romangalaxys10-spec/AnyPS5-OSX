@@ -1,6 +1,13 @@
 #ifndef CORE_LIBS_PRX_LIBSCEVIDEOOUT_INCLUDE_VIDEOOUTDRIVER_HPP
 #define CORE_LIBS_PRX_LIBSCEVIDEOOUT_INCLUDE_VIDEOOUTDRIVER_HPP
 
+#if defined(__APPLE__)
+#include "prx/libSceVideoOut/include/Jthread.hpp"
+using StdCompat::jthread;
+using StdCompat::stop_token;
+#else
+#include <thread>
+#endif
 #include <array>
 #include <chrono>
 #include <condition_variable>
