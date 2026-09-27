@@ -30,6 +30,9 @@ endif()
 
 if(APPLE)
     enable_language(OBJCXX)
+    # The NID patcher and relinker emit classic LC_DYLD_INFO bind/export structures;
+    # keep the linker output in the same format instead of chained fixups.
+    add_link_options(-Wl,-no_fixup_chains)
     # Darwin binaries must never be fully statically linked against the system runtime.
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -framework Metal -framework MetalFX -framework Foundation -framework QuartzCore -weak_framework MetalFX")
 else()
