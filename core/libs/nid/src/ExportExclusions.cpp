@@ -74,6 +74,36 @@ std::unordered_set<std::string> ReadPeExports(const std::vector<std::uint8_t>& b
     return result;
 }
 
+std::unordered_set<std::string> ReadMachOExports(const std::vector<std::uint8_t>& binary) {
+    if (ReadValue<std::uint32_t>(binary, 0) != 0xFEEDFACFu) throw std::runtime_error("invalid reference Mach-O signature");
+    const auto commandCount = ReadValue<std::uint32_t>(binary, 16);
+    std::uint64_t cursor = 32;
+    std::unordered_set<std::string> exports;
+    for (std::uint32_t command = 0; command < commandCount; ++command) {
+        const auto type = ReadValue<std::uint32_t>(binary, cursor);
+        const auto size = ReadValue<std::uint32_t>(binary, cursor + 4);
+        if (type == 0x2u) {
+            const auto symbolOffset = ReadValue<std::uint32_t>(binary, cursor + 8);
+            const auto symbolCount = ReadValue<std::uint32_t>(binary, cursor + 12);
+            const auto stringOffset = ReadValue<std::uint32_t>(binary, cursor + 16);
+            const auto stringSize = ReadValue<std::uint32_t>(binary, cursor + 20);
+            for (std::uint32_t index = 0; index < symbolCount; ++index) {
+                const auto entry = symbolOffset + static_cast<std::uint64_t>(index) * 16;
+                const auto nameOffset = ReadValue<std::uint32_t>(binary, entry);
+                const auto symbolType = ReadValue<std::uint8_t>(binary, entry + 4);
+                const bool external = (symbolType & 0x01u) != 0;
+                const bool defined = (symbolType & 0x0eu) == 0x0eu;
+                if (!external || !defined) continue;
+                auto name = ReadName(binary, stringOffset + nameOffset, stringSize > nameOffset ? stringSize - nameOffset : 0);
+                if (name.size() > 1 && name[0] == '_') name = name.substr(1);
+                if (!name.empty()) exports.insert(std::move(name));
+            }
+        }
+        cursor += size;
+    }
+    return exports;
+}
+
 std::unordered_set<std::string> ReadElfExports(const std::vector<std::uint8_t>& binary) {
     const auto header = ReadValue<Elf64_Ehdr>(binary, 0);
     if (header.e_ident[4] != 2 || header.e_ident[5] != 1 || header.e_shentsize != sizeof(Elf64_Shdr)) throw std::runtime_error("unsupported reference ELF layout");
@@ -121,6 +151,8 @@ std::unordered_set<std::string> ReadExportExclusions(const std::string& path) {
         exports = ReadPeExports(binary);
     } else if (binary.size() >= 4 && binary[0] == 0x7f && binary[1] == 'E' && binary[2] == 'L' && binary[3] == 'F') {
         exports = ReadElfExports(binary);
+    } else if (binary.size() >= 4 && binary[0] == 0xCF && binary[1] == 0xFA && binary[2] == 0xED && binary[3] == 0xFE) {
+        exports = ReadMachOExports(binary);
     } else {
         throw std::runtime_error("unrecognized export reference format: " + path);
     }
