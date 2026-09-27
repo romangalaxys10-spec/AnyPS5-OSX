@@ -3,8 +3,10 @@
 
 #if defined(__APPLE__)
 #include "prx/libSceVideoOut/include/Jthread.hpp"
+namespace std {
 using StdCompat::jthread;
 using StdCompat::stop_token;
+}
 #else
 #include <thread>
 #endif
