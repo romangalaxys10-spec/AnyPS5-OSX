@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -607,8 +608,18 @@ void MachONidPatcher::PatchNids(std::vector<std::uint8_t>& macho, const std::str
     const auto nidMap = ResolveNids(exportedNames, libraryName, excludedExports);
 
     RewriteSymbolTable(macho, symtabCommandOffset, linkedit, nidMap, oldStrTab, externals);
-    RewriteExportTrie(macho, linkedit, trie, nidMap, std::move(trieTerminals), forceTrieRebuild);
-    if (dyldInfoCommandOffset != 0u) RewriteBindStreams(macho, dyldInfoCommandOffset, linkedit);
+    try {
+        RewriteExportTrie(macho, linkedit, trie, nidMap, std::move(trieTerminals), forceTrieRebuild);
+    } catch (const std::exception& trieError) {
+        std::cerr << "warning: " << libraryName << ": export trie patching skipped (" << trieError.what() << "); exports keep original symbol names\n";
+    }
+    if (dyldInfoCommandOffset != 0u) {
+        try {
+            RewriteBindStreams(macho, dyldInfoCommandOffset, linkedit);
+        } catch (const std::exception& bindError) {
+            std::cerr << "warning: " << libraryName << ": bind stream patching skipped (" << bindError.what() << ")\n";
+        }
+    }
 }
 
 }
