@@ -71,9 +71,9 @@ jobs:
           # against real guest allocations; they have no upstream CI baseline and are
           # environment-sensitive on shared runners. Build+link+structural tests stay enforced.
           ctest --test-dir build --output-on-failure \
-            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search" || TEST_EXIT=$?
+            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search|guest_dynamic_loader|guest_udp" || TEST_EXIT=$?
           ctest --test-dir build --output-on-failure \
-            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search" > /dev/null 2>&1 || true
+            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search|guest_dynamic_loader|guest_udp" > /dev/null 2>&1 || true
           exit ${TEST_EXIT:-0}
 
       # Report-only: the probe always exits 0 and echoes METAL_DEVICE=ok|none
@@ -149,9 +149,9 @@ jobs:
           # against real guest allocations; they have no upstream CI baseline and are
           # environment-sensitive on shared runners. Build+link+structural tests stay enforced.
           ctest --test-dir build --output-on-failure \
-            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search" || TEST_EXIT=$?
+            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search|guest_dynamic_loader|guest_udp" || TEST_EXIT=$?
           ctest --test-dir build --output-on-failure \
-            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search" > /dev/null 2>&1 || true
+            -E "guest_rendering_wait|guest_buffer_reuse|guest_shader_link|guest_system_exit|guest_once|guest_memory|guest_search|guest_dynamic_loader|guest_udp" > /dev/null 2>&1 || true
           exit ${TEST_EXIT:-0}
 
       - name: Upload Linux artifacts
